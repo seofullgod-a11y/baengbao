@@ -125,42 +125,42 @@ async function handleEvent(ev) {
     const raw = ev.message.text.trim();
     const t = raw.toLowerCase();
 
-    if (['ช่วย', 'help', 'วิธีใช้', 'เริ่ม', 'start'].some(k => t.includes(k)))
-      return replyText(ev.replyToken, HELP);
-
-    if (['สรุป', 'วันนี้', 'ยอดวันนี้'].some(k => raw.includes(k))) {
-      const day = await db.dayTotals(userId, bkkDate());
-      return replyText(ev.replyToken, `📊 สรุปวันนี้ (${day.count} รายการ)\n${summaryLine(day)}`);
-    }
-    if (['เดือนนี้', 'สรุปเดือน', 'ยอดเดือน'].some(k => raw.includes(k))) {
-      const ym = bkkDate().slice(0, 7);
-      const m = await db.monthTotals(userId, ym);
-      return replyText(ev.replyToken, `📅 สรุปเดือนนี้ (${m.count} รายการ)\n${summaryLine(m)}`);
-    }
-    if (['กำไรเมนู', 'กำไรต่อจาน'].some(k => raw.includes(k))) {
-      const menus = await db.listMenus(userId);
-      if (!menus.length) {
-        const u = liffUrl();
-        return replyText(ev.replyToken, 'ยังไม่มีเมนูเลยครับ ตั้งเมนูแรกได้ที่นี่' + (u ? `\n${u}` : ' (พิมพ์ "เมนู")'));
-      }
-      const lines = menus
-        .slice()
-        .sort((a, b) => menuProfit(b) - menuProfit(a))
-        .map(m => `• ${m.name}: กำไร ${baht(menuProfit(m))} ฿/จาน (มาร์จิน ${menuMargin(m).toFixed(0)}%)`);
-      return replyText(ev.replyToken, `🍳 กำไรต่อจาน\n${lines.join('\n')}`);
-    }
-    if (raw.includes('เมนู')) {
-      const u = liffUrl();
-      const menus = await db.listMenus(userId);
-      let msg = u ? `จัดการเมนู + ดูกำไรต่อจานที่นี่ครับ 👇\n${u}` : 'ยังไม่ได้ตั้งค่า LIFF (ตั้ง LIFF_ID ใน env ก่อนครับ)';
-      if (menus.length) {
-        const top = menus.slice(0, 5).map(m => `• ${m.name}: ${baht(menuProfit(m))} ฿/จาน`).join('\n');
-        msg += `\n━━━━━━━\nเมนูตอนนี้:\n${top}`;
-      }
-      return replyText(ev.replyToken, msg);
-    }
-
     try {
+      if (['ช่วย', 'help', 'วิธีใช้', 'เริ่ม', 'start'].some(k => t.includes(k)))
+        return replyText(ev.replyToken, HELP);
+
+      if (['สรุป', 'วันนี้', 'ยอดวันนี้'].some(k => raw.includes(k))) {
+        const day = await db.dayTotals(userId, bkkDate());
+        return replyText(ev.replyToken, `📊 สรุปวันนี้ (${day.count} รายการ)\n${summaryLine(day)}`);
+      }
+      if (['เดือนนี้', 'สรุปเดือน', 'ยอดเดือน'].some(k => raw.includes(k))) {
+        const ym = bkkDate().slice(0, 7);
+        const m = await db.monthTotals(userId, ym);
+        return replyText(ev.replyToken, `📅 สรุปเดือนนี้ (${m.count} รายการ)\n${summaryLine(m)}`);
+      }
+      if (['กำไรเมนู', 'กำไรต่อจาน'].some(k => raw.includes(k))) {
+        const menus = await db.listMenus(userId);
+        if (!menus.length) {
+          const u = liffUrl();
+          return replyText(ev.replyToken, 'ยังไม่มีเมนูเลยครับ ตั้งเมนูแรกได้ที่นี่' + (u ? `\n${u}` : ' (พิมพ์ "เมนู")'));
+        }
+        const lines = menus
+          .slice()
+          .sort((a, b) => menuProfit(b) - menuProfit(a))
+          .map(m => `• ${m.name}: กำไร ${baht(menuProfit(m))} ฿/จาน (มาร์จิน ${menuMargin(m).toFixed(0)}%)`);
+        return replyText(ev.replyToken, `🍳 กำไรต่อจาน\n${lines.join('\n')}`);
+      }
+      if (raw.includes('เมนู')) {
+        const u = liffUrl();
+        const menus = await db.listMenus(userId);
+        let msg = u ? `จัดการเมนู + ดูกำไรต่อจานที่นี่ครับ 👇\n${u}` : 'ยังไม่ได้ตั้งค่า LIFF (ตั้ง LIFF_ID ใน env ก่อนครับ)';
+        if (menus.length) {
+          const top = menus.slice(0, 5).map(m => `• ${m.name}: ${baht(menuProfit(m))} ฿/จาน`).join('\n');
+          msg += `\n━━━━━━━\nเมนูตอนนี้:\n${top}`;
+        }
+        return replyText(ev.replyToken, msg);
+      }
+
       const parsed = await ai.parseText(raw);
       if (!parsed.is_transaction)
         return replyText(ev.replyToken, parsed.reply_hint || HELP);
@@ -168,7 +168,7 @@ async function handleEvent(ev) {
         return replyText(ev.replyToken, 'รับทราบว่าเป็นรายการ แต่ยังไม่เห็นยอดเงินเลยครับ ลองพิมพ์ยอดมาด้วยนะ เช่น "ซื้อหมู 800"');
       return replyText(ev.replyToken, await confirmAndSummary(userId, parsed, 'text'));
     } catch (e) {
-      console.error('[parseText]', e.message);
+      console.error('[text]', e.message);
       return replyText(ev.replyToken, 'ขอโทษครับ ตอนนี้ประมวลผลไม่ได้ ลองพิมพ์ใหม่อีกครั้งนะ');
     }
   }
