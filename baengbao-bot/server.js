@@ -1,5 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
+const path = require('path');
 const db = require('./db');
 const ai = require('./ai');
 
@@ -7,6 +8,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET || '';
 const CHANNEL_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
+const LIFF_ID = process.env.LIFF_ID || '';
+const liffUrl = () => (LIFF_ID ? `https://liff.line.me/${LIFF_ID}` : null);
 
 // ---------- helpers ----------
 function bkkDate(d = new Date()) {
@@ -41,6 +44,21 @@ function summaryLine(t) {
   return `รายรับ ${baht(t.income)} / รายจ่าย ${baht(t.expense)}\nกำไรสุทธิ ${t.profit >= 0 ? '+' : ''}${baht(t.profit)} ฿`;
 }
 
+// กำไรต่อจานของเมนู
+const menuProfit = m => m.price - m.material_cost - m.labor_cost;
+const menuMargin = m => (m.price > 0 ? (menuProfit(m) / m.price) * 100 : 0);
+const norm = s => String(s || '').replace(/\s+/g, '').toLowerCase();
+
+// จับคู่ชื่อรายการที่ขาย กับเมนูที่ตั้งไว้ (match แบบ contains)
+function matchMenu(menus, itemName) {
+  const n = norm(itemName);
+  if (!n) return null;
+  return menus.find(m => {
+    const mn = norm(m.name);
+    return mn && (mn.includes(n) || n.includes(mn));
+  }) || null;
+}
+
 async function confirmAndSummary(userId, parsed, source) {
   const date = bkkDate();
   await db.insertTxn({
@@ -55,8 +73,25 @@ async function confirmAndSummary(userId, parsed, source) {
   });
   const day = await db.dayTotals(userId, date);
   const sign = parsed.type === 'income' ? '+' : '−';
-  const head = `✅ บันทึกแล้ว\n${parsed.type === 'income' ? 'รายรับ' : 'รายจ่าย'} ${sign}${baht(parsed.amount)} ฿` +
+  let head = `✅ บันทึกแล้ว\n${parsed.type === 'income' ? 'รายรับ' : 'รายจ่าย'} ${sign}${baht(parsed.amount)} ฿` +
     (parsed.note ? ` (${parsed.note})` : '');
+
+  // ถ้าเป็นการขายและตรงกับเมนูที่ตั้งไว้ → โชว์กำไรโดยประมาณ
+  if (parsed.type === 'income' && parsed.items && parsed.items.length) {
+    try {
+      const menus = await db.listMenus(userId);
+      if (menus.length) {
+        const it = parsed.items[0];
+        const m = matchMenu(menus, it.name);
+        const qty = Number(it.qty) || null;
+        if (m && qty) {
+          const est = parsed.amount - (m.material_cost + m.labor_cost) * qty;
+          head += `\n💰 กำไรเมนูนี้ ~${baht(est)} ฿`;
+        }
+      }
+    } catch (e) { console.error('[menuProfit]', e.message); }
+  }
+
   return `${head}\n━━━━━━━\nวันนี้: ${summaryLine(day)}`;
 }
 
@@ -71,7 +106,9 @@ const HELP =
 
 คำสั่ง:
 • "สรุป" หรือ "วันนี้" — ดูยอดวันนี้
-• "เดือนนี้" — ดูยอดทั้งเดือน`;
+• "เดือนนี้" — ดูยอดทั้งเดือน
+• "เมนู" — ตั้งเมนู + ดูกำไรต่อจาน
+• "กำไรเมนู" — ดูกำไรต่อจานของทุกเมนู`;
 
 // ---------- event handling ----------
 async function handleEvent(ev) {
@@ -99,6 +136,28 @@ async function handleEvent(ev) {
       const ym = bkkDate().slice(0, 7);
       const m = await db.monthTotals(userId, ym);
       return replyText(ev.replyToken, `📅 สรุปเดือนนี้ (${m.count} รายการ)\n${summaryLine(m)}`);
+    }
+    if (['กำไรเมนู', 'กำไรต่อจาน'].some(k => raw.includes(k))) {
+      const menus = await db.listMenus(userId);
+      if (!menus.length) {
+        const u = liffUrl();
+        return replyText(ev.replyToken, 'ยังไม่มีเมนูเลยครับ ตั้งเมนูแรกได้ที่นี่' + (u ? `\n${u}` : ' (พิมพ์ "เมนู")'));
+      }
+      const lines = menus
+        .slice()
+        .sort((a, b) => menuProfit(b) - menuProfit(a))
+        .map(m => `• ${m.name}: กำไร ${baht(menuProfit(m))} ฿/จาน (มาร์จิน ${menuMargin(m).toFixed(0)}%)`);
+      return replyText(ev.replyToken, `🍳 กำไรต่อจาน\n${lines.join('\n')}`);
+    }
+    if (raw.includes('เมนู')) {
+      const u = liffUrl();
+      const menus = await db.listMenus(userId);
+      let msg = u ? `จัดการเมนู + ดูกำไรต่อจานที่นี่ครับ 👇\n${u}` : 'ยังไม่ได้ตั้งค่า LIFF (ตั้ง LIFF_ID ใน env ก่อนครับ)';
+      if (menus.length) {
+        const top = menus.slice(0, 5).map(m => `• ${m.name}: ${baht(menuProfit(m))} ฿/จาน`).join('\n');
+        msg += `\n━━━━━━━\nเมนูตอนนี้:\n${top}`;
+      }
+      return replyText(ev.replyToken, msg);
     }
 
     try {
@@ -150,6 +209,63 @@ app.post('/webhook', (req, res) => {
 
 app.get('/', (_req, res) => res.send('แบ่งเบา bot ok'));
 app.get('/health', (_req, res) => res.json({ ok: true }));
+
+// ---------- mini-app (LIFF) ----------
+// เสิร์ฟหน้าเว็บจัดการเมนู
+app.use('/app', express.static(path.join(__dirname, 'public')));
+app.get('/app', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'app.html')));
+
+// config สำหรับ frontend (ส่ง LIFF_ID ออกไป ไม่ต้อง hardcode)
+app.get('/api/config', (_req, res) => res.json({ liffId: LIFF_ID }));
+
+// ตรวจ access token ของ LIFF → ดึง userId
+async function liffAuth(req, res, next) {
+  const auth = req.get('authorization') || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  if (!token) return res.status(401).json({ error: 'no token' });
+  try {
+    const r = await fetch('https://api.line.me/v2/profile', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!r.ok) return res.status(401).json({ error: 'invalid token' });
+    const profile = await r.json();
+    req.userId = profile.userId;
+    req.displayName = profile.displayName;
+    next();
+  } catch (e) {
+    console.error('[liffAuth]', e.message);
+    res.status(401).json({ error: 'auth failed' });
+  }
+}
+
+app.use('/api/menus', express.json(), liffAuth);
+
+app.get('/api/menus', async (req, res) => {
+  await db.upsertUser(req.userId, req.displayName);
+  res.json(await db.listMenus(req.userId));
+});
+
+app.post('/api/menus', async (req, res) => {
+  const { name, price, material_cost, labor_cost } = req.body || {};
+  if (!name || !String(name).trim()) return res.status(400).json({ error: 'ต้องมีชื่อเมนู' });
+  const id = await db.createMenu(req.userId, {
+    name: String(name).trim(), price: +price || 0, material_cost: +material_cost || 0, labor_cost: +labor_cost || 0,
+  });
+  res.json({ id });
+});
+
+app.put('/api/menus/:id', async (req, res) => {
+  const { name, price, material_cost, labor_cost } = req.body || {};
+  if (!name || !String(name).trim()) return res.status(400).json({ error: 'ต้องมีชื่อเมนู' });
+  const ok = await db.updateMenu(req.userId, +req.params.id, {
+    name: String(name).trim(), price: +price || 0, material_cost: +material_cost || 0, labor_cost: +labor_cost || 0,
+  });
+  res.json({ ok });
+});
+
+app.delete('/api/menus/:id', async (req, res) => {
+  res.json({ ok: await db.deleteMenu(req.userId, +req.params.id) });
+});
 
 db.init()
   .then(() => app.listen(PORT, () => console.log(`แบ่งเบา bot running on :${PORT}`)))

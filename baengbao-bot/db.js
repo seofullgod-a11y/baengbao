@@ -32,6 +32,18 @@ async function init() {
     );
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_txn_user_date ON transactions (line_user_id, txn_date);`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS menus (
+      id            BIGSERIAL PRIMARY KEY,
+      line_user_id  TEXT NOT NULL,
+      name          TEXT NOT NULL,
+      price         NUMERIC(12,2) NOT NULL DEFAULT 0,
+      material_cost NUMERIC(12,2) NOT NULL DEFAULT 0,
+      labor_cost    NUMERIC(12,2) NOT NULL DEFAULT 0,
+      created_at    TIMESTAMPTZ DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_menu_user ON menus (line_user_id);`);
   console.log('[db] schema ready');
 }
 
@@ -79,4 +91,44 @@ async function monthTotals(lineUserId, ym) {
   return { income: +r.income, expense: +r.expense, count: +r.count, profit: +r.income - +r.expense };
 }
 
-module.exports = { pool, init, upsertUser, insertTxn, dayTotals, monthTotals };
+async function listMenus(lineUserId) {
+  const { rows } = await pool.query(
+    `SELECT id, name, price, material_cost, labor_cost
+     FROM menus WHERE line_user_id=$1 ORDER BY created_at ASC`,
+    [lineUserId]
+  );
+  return rows.map(r => ({
+    id: +r.id, name: r.name,
+    price: +r.price, material_cost: +r.material_cost, labor_cost: +r.labor_cost,
+  }));
+}
+
+async function createMenu(lineUserId, m) {
+  const { rows } = await pool.query(
+    `INSERT INTO menus (line_user_id, name, price, material_cost, labor_cost)
+     VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+    [lineUserId, m.name, m.price || 0, m.material_cost || 0, m.labor_cost || 0]
+  );
+  return rows[0].id;
+}
+
+async function updateMenu(lineUserId, id, m) {
+  const { rowCount } = await pool.query(
+    `UPDATE menus SET name=$3, price=$4, material_cost=$5, labor_cost=$6
+     WHERE id=$1 AND line_user_id=$2`,
+    [id, lineUserId, m.name, m.price || 0, m.material_cost || 0, m.labor_cost || 0]
+  );
+  return rowCount > 0;
+}
+
+async function deleteMenu(lineUserId, id) {
+  const { rowCount } = await pool.query(
+    `DELETE FROM menus WHERE id=$1 AND line_user_id=$2`, [id, lineUserId]
+  );
+  return rowCount > 0;
+}
+
+module.exports = {
+  pool, init, upsertUser, insertTxn, dayTotals, monthTotals,
+  listMenus, createMenu, updateMenu, deleteMenu,
+};
