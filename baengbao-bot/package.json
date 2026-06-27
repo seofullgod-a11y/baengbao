@@ -1,0 +1,17 @@
+{
+  "name": "baengbao-bot",
+  "version": "1.0.0",
+  "description": "แบ่งเบา — LINE bot that records restaurant income/expense from text & bill photos using Claude",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "express": "^4.19.2",
+    "pg": "^8.12.0"
+  }
+}
