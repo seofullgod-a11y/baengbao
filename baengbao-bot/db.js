@@ -44,6 +44,14 @@ async function init() {
     );
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_menu_user ON menus (line_user_id);`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS usage_daily (
+      line_user_id TEXT NOT NULL,
+      usage_date   DATE NOT NULL,
+      ai_calls     INT  NOT NULL DEFAULT 0,
+      PRIMARY KEY (line_user_id, usage_date)
+    );
+  `);
   console.log('[db] schema ready');
 }
 
@@ -170,8 +178,20 @@ async function deleteTxn(lineUserId, id) {
   return rowCount > 0;
 }
 
+// เพิ่มตัวนับการเรียก AI ต่อผู้ใช้ต่อวัน แล้วคืนค่าจำนวนล่าสุด (atomic)
+async function bumpUsage(lineUserId, dateStr) {
+  const { rows } = await pool.query(
+    `INSERT INTO usage_daily (line_user_id, usage_date, ai_calls) VALUES ($1,$2,1)
+     ON CONFLICT (line_user_id, usage_date) DO UPDATE SET ai_calls = usage_daily.ai_calls + 1
+     RETURNING ai_calls`,
+    [lineUserId, dateStr]
+  );
+  return rows[0].ai_calls;
+}
+
 module.exports = {
   pool, init, upsertUser, insertTxn, dayTotals, monthTotals,
   listMenus, createMenu, updateMenu, deleteMenu,
   dailySeries, categoryBreakdown, recentTxns, deleteTxn,
+  bumpUsage,
 };

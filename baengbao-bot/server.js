@@ -10,6 +10,15 @@ const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET || '';
 const CHANNEL_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
 const LIFF_ID = process.env.LIFF_ID || '';
 const liffUrl = () => (LIFF_ID ? `https://liff.line.me/${LIFF_ID}` : null);
+const DAILY_AI_LIMIT = +process.env.DAILY_AI_LIMIT || 80;
+const QUOTA_MSG = `วันนี้ใช้ผู้ช่วย AI ครบโควตาแล้วครับ (${DAILY_AI_LIMIT} ครั้ง/วัน) 🙏\nคำสั่งดูข้อมูลอย่าง "สรุป" "รายงาน" "เมนู" ยังใช้ได้ปกติ พรุ่งนี้ค่อยจดต่อได้เลย`;
+// นับการเรียก AI ต่อวัน คืน true ถ้าเกินโควตา
+async function overQuota(userId) {
+  try {
+    const n = await db.bumpUsage(userId, bkkDate());
+    return n > DAILY_AI_LIMIT;
+  } catch (e) { console.error('[quota]', e.message); return false; }
+}
 
 // ---------- helpers ----------
 function bkkDate(d = new Date()) {
@@ -95,6 +104,51 @@ async function confirmAndSummary(userId, parsed, source) {
   return `${head}\n━━━━━━━\nวันนี้: ${summaryLine(day)}`;
 }
 
+// บันทึกยอดจากหน้าสรุปเดลิเวอรี่ (Grab/LineMan/Shopee)
+async function recordDelivery(userId, p) {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(p.summary_date || '') ? p.summary_date : bkkDate();
+  const platform = p.platform || 'เดลิเวอรี่';
+  const ordersTxt = p.orders ? `${p.orders} ออเดอร์` : '';
+  let gross = p.gross_sales, commission = p.commission, net = p.net_payout;
+
+  // ไม่มียอดเลย จับไม่ได้
+  if (gross == null && net == null) {
+    return `อ่านหน้าสรุป ${platform} แล้วแต่จับยอดไม่ชัดครับ ลองแคปให้เห็นยอดขายรวม/ยอดโอนชัด ๆ หรือพิมพ์ยอดมาก็ได้`;
+  }
+
+  // ถ้าไม่มียอดรวม ใช้ยอดสุทธิเป็นรายรับ (ถือว่า GP หักไปแล้ว)
+  if (gross == null) {
+    await db.insertTxn({
+      lineUserId: userId, type: 'income', amount: net,
+      category: `ขายเดลิเวอรี่·${platform}`, note: `${platform} (สุทธิ) ${ordersTxt}`.trim(),
+      items: null, source: 'image', txnDate: date,
+    });
+    const day = await db.dayTotals(userId, date);
+    return `✅ บันทึกยอด ${platform} แล้ว\nรายรับสุทธิ +${baht(net)} ฿${ordersTxt ? ` (${ordersTxt})` : ''}\n━━━━━━━\nวันที่ ${date.slice(8)}/${date.slice(5, 7)}: ${summaryLine(day)}`;
+  }
+
+  // มียอดขายรวม → ลงรายรับ = ยอดรวม, รายจ่าย = ค่า GP
+  await db.insertTxn({
+    lineUserId: userId, type: 'income', amount: gross,
+    category: `ขายเดลิเวอรี่·${platform}`, note: `${platform} ${ordersTxt}`.trim(),
+    items: null, source: 'image', txnDate: date,
+  });
+  if (commission && commission > 0) {
+    await db.insertTxn({
+      lineUserId: userId, type: 'expense', amount: commission,
+      category: `ค่า GP·${platform}`, note: `ค่าธรรมเนียม ${platform}`,
+      items: null, source: 'image', txnDate: date,
+    });
+  }
+  const netShown = net != null ? net : gross - (commission || 0);
+  const day = await db.dayTotals(userId, date);
+  let msg = `✅ บันทึกยอด ${platform} แล้ว\nยอดขาย +${baht(gross)} ฿${ordersTxt ? ` (${ordersTxt})` : ''}`;
+  if (commission && commission > 0) msg += `\nค่า GP −${baht(commission)} ฿`;
+  msg += `\nสุทธิ ${baht(netShown)} ฿`;
+  msg += `\n━━━━━━━\nวันที่ ${date.slice(8)}/${date.slice(5, 7)}: ${summaryLine(day)}`;
+  return msg;
+}
+
 const HELP =
 `สวัสดีครับ ผม "แบ่งเบา" ผู้ช่วยบัญชีร้านอาหาร 🧾
 
@@ -103,6 +157,7 @@ const HELP =
 • ซื้อหมู 800
 • จ่ายค่าแก๊ส 450
 หรือถ่ายรูปบิลส่งมา เดี๋ยวผมอ่านให้
+📱 แคปหน้าสรุปยอด Grab/LineMan/Shopee ส่งมาได้ ผมลงให้พร้อมหักค่า GP
 
 คำสั่ง:
 • "สรุป" หรือ "วันนี้" — ดูยอดวันนี้
@@ -114,7 +169,8 @@ const HELP =
 // ---------- event handling ----------
 async function handleEvent(ev) {
   if (ev.type === 'follow') {
-    return replyText(ev.replyToken, HELP);
+    const welcome = `ขอบคุณที่เพิ่มเพื่อน "แบ่งเบา" ครับ 🙏\nผมเป็นผู้ช่วยบัญชีร้านอาหาร — จดรายรับ-รายจ่ายให้แค่พิมพ์หรือถ่ายรูป\n\nลองเลย! พิมพ์ว่า\n👉 ขายกะเพรา 5 จาน 250\n\n` + HELP;
+    return replyText(ev.replyToken, welcome);
   }
   if (ev.type !== 'message' || !ev.source || ev.source.type !== 'user') return;
 
@@ -171,6 +227,7 @@ async function handleEvent(ev) {
           (link ? `\n━━━━━━━\nดูกราฟเต็ม ๆ ที่นี่ 👇\n${link}` : ''));
       }
 
+      if (await overQuota(userId)) return replyText(ev.replyToken, QUOTA_MSG);
       const parsed = await ai.parseText(raw);
       if (!parsed.is_transaction)
         return replyText(ev.replyToken, parsed.reply_hint || HELP);
@@ -183,17 +240,23 @@ async function handleEvent(ev) {
     }
   }
 
-  // ----- image (bill) -----
+  // ----- image (bill / delivery summary) -----
   if (ev.message.type === 'image') {
     try {
+      if (await overQuota(userId)) return replyText(ev.replyToken, QUOTA_MSG);
       const { base64, mediaType } = await getImageBase64(ev.message.id);
       const parsed = await ai.parseImage(base64, mediaType);
+
+      if (parsed.doc_type === 'delivery_summary') {
+        return replyText(ev.replyToken, await recordDelivery(userId, parsed));
+      }
+      // bill ปกติ
       if (!parsed.is_transaction || parsed.amount == null)
-        return replyText(ev.replyToken, 'อ่านบิลแล้วแต่จับยอดรวมไม่ชัดครับ ลองถ่ายให้เห็นยอดรวมชัดๆ หรือพิมพ์ยอดมาก็ได้');
+        return replyText(ev.replyToken, 'อ่านรูปแล้วแต่จับยอดไม่ชัดครับ ลองถ่ายให้เห็นยอดรวมชัดๆ หรือพิมพ์ยอดมาก็ได้');
       return replyText(ev.replyToken, await confirmAndSummary(userId, parsed, 'image'));
     } catch (e) {
       console.error('[parseImage]', e.message);
-      return replyText(ev.replyToken, 'ขอโทษครับ อ่านรูปบิลไม่สำเร็จ ลองส่งใหม่อีกครั้งนะ');
+      return replyText(ev.replyToken, 'ขอโทษครับ อ่านรูปไม่สำเร็จ ลองส่งใหม่อีกครั้งนะ');
     }
   }
 }

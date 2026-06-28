@@ -44,17 +44,42 @@ async function parseText(message) {
   return safeJSON(text);
 }
 
+const IMAGE_GUIDE = `
+ดูรูปแล้วแยกประเภทก่อน ตอบเป็น JSON object เท่านั้น ห้ามมี markdown
+{
+  "doc_type": "bill" | "delivery_summary" | "other",
+  // กรณี bill (ใบเสร็จ/บิลซื้อของ):
+  "is_transaction": boolean,
+  "type": "income" | "expense" | null,
+  "amount": number | null,
+  "category": string | null,
+  "items": [ { "name": string, "qty": number|null, "amount": number|null } ],
+  "note": string,
+  // กรณี delivery_summary (หน้าสรุปยอด/รายได้จากแอปเดลิเวอรี่):
+  "platform": "Grab" | "LineMan" | "Shopee" | "อื่นๆ" | null,
+  "gross_sales": number | null,   // ยอดขายรวมก่อนหักค่าธรรมเนียม
+  "commission": number | null,    // ค่า GP / ค่าคอมมิชชั่น / ค่าธรรมเนียมที่ถูกหัก
+  "net_payout": number | null,    // ยอดเงินสุทธิที่ได้รับ/โอนเข้า
+  "orders": number | null,        // จำนวนออเดอร์
+  "summary_date": "YYYY-MM-DD" | null
+}
+กฎ:
+- ถ้าเป็นหน้าสรุปยอดขาย/รายได้จาก Grab, LineMan, Shopee Food → doc_type="delivery_summary" และกรอกฟิลด์เดลิเวอรี่ (ดู logo/สี/คำว่า GP, ค่าคอมมิชชั่น, ยอดโอน)
+- ถ้าเป็นบิลซื้อของ/ใบเสร็จร้านค้า → doc_type="bill", type=expense เป็นค่าเริ่มต้น, ดึง items + ยอดรวมลง amount
+- ตัวเลขตัดคอมมา/บาทออก เหลือเลขล้วน
+- อ่านไม่ออก/ไม่เกี่ยว → doc_type="other"
+`;
+
 async function parseImage(base64, mediaType) {
   const res = await anthropic.messages.create({
     model: VISION_MODEL,
     max_tokens: 1500,
-    system: 'คุณคือผู้ช่วยลงบัญชีร้านอาหารไทย อ่านบิล/ใบเสร็จในรูปแล้วสรุปเป็นรายการบัญชี\n' + SCHEMA_GUIDE +
-      '\nสำหรับรูปบิลซื้อของให้ type=expense เป็นค่าเริ่มต้น เว้นแต่เป็นสรุปยอดขายให้ type=income\nดึงรายการสินค้าลง items และยอดรวมลง amount',
+    system: 'คุณคือผู้ช่วยลงบัญชีร้านอาหารไทย อ่านรูป (บิลซื้อของ หรือหน้าสรุปยอดเดลิเวอรี่) แล้วสรุปเป็นข้อมูลบัญชี\n' + IMAGE_GUIDE,
     messages: [{
       role: 'user',
       content: [
         { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
-        { type: 'text', text: 'อ่านบิลนี้แล้วตอบเป็น JSON ตามโครงสร้าง' },
+        { type: 'text', text: 'อ่านรูปนี้แล้วตอบเป็น JSON ตามโครงสร้าง' },
       ],
     }],
   });
