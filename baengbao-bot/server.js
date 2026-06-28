@@ -108,7 +108,8 @@ const HELP =
 • "สรุป" หรือ "วันนี้" — ดูยอดวันนี้
 • "เดือนนี้" — ดูยอดทั้งเดือน
 • "เมนู" — ตั้งเมนู + ดูกำไรต่อจาน
-• "กำไรเมนู" — ดูกำไรต่อจานของทุกเมนู`;
+• "กำไรเมนู" — ดูกำไรต่อจานของทุกเมนู
+• "รายงาน" — เปิดแดชบอร์ดกราฟ + แก้/ลบรายการ`;
 
 // ---------- event handling ----------
 async function handleEvent(ev) {
@@ -159,6 +160,15 @@ async function handleEvent(ev) {
           msg += `\n━━━━━━━\nเมนูตอนนี้:\n${top}`;
         }
         return replyText(ev.replyToken, msg);
+      }
+      if (['รายงาน', 'แดชบอร์ด', 'กราฟ', 'dashboard'].some(k => t.includes(k))) {
+        const u = liffUrl();
+        const ym = bkkDate().slice(0, 7);
+        const m = await db.monthTotals(userId, ym);
+        const link = u ? `${u}?tab=report` : null;
+        return replyText(ev.replyToken,
+          `📊 รายงานเดือนนี้ (${m.count} รายการ)\n${summaryLine(m)}` +
+          (link ? `\n━━━━━━━\nดูกราฟเต็ม ๆ ที่นี่ 👇\n${link}` : ''));
       }
 
       const parsed = await ai.parseText(raw);
@@ -238,7 +248,7 @@ async function liffAuth(req, res, next) {
   }
 }
 
-app.use('/api/menus', express.json(), liffAuth);
+app.use(['/api/menus', '/api/stats', '/api/transactions'], express.json(), liffAuth);
 
 app.get('/api/menus', async (req, res) => {
   await db.upsertUser(req.userId, req.displayName);
@@ -265,6 +275,27 @@ app.put('/api/menus/:id', async (req, res) => {
 
 app.delete('/api/menus/:id', async (req, res) => {
   res.json({ ok: await db.deleteMenu(req.userId, +req.params.id) });
+});
+
+// ---- เฟส 3: dashboard data ----
+const YM_RE = /^\d{4}-\d{2}$/;
+app.get('/api/stats', async (req, res) => {
+  const ym = YM_RE.test(req.query.month) ? req.query.month : bkkDate().slice(0, 7);
+  const [days, categories, totals] = await Promise.all([
+    db.dailySeries(req.userId, ym),
+    db.categoryBreakdown(req.userId, ym, 'expense'),
+    db.monthTotals(req.userId, ym),
+  ]);
+  res.json({ month: ym, days, categories, totals });
+});
+
+app.get('/api/transactions', async (req, res) => {
+  const limit = Math.min(Math.max(+req.query.limit || 20, 1), 50);
+  res.json(await db.recentTxns(req.userId, limit));
+});
+
+app.delete('/api/transactions/:id', async (req, res) => {
+  res.json({ ok: await db.deleteTxn(req.userId, +req.params.id) });
 });
 
 db.init()

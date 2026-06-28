@@ -128,7 +128,50 @@ async function deleteMenu(lineUserId, id) {
   return rowCount > 0;
 }
 
+// ---- เฟส 3: dashboard ----
+async function dailySeries(lineUserId, ym) {
+  const { rows } = await pool.query(
+    `SELECT txn_date::text AS d,
+       COALESCE(SUM(amount) FILTER (WHERE type='income'),0)  AS income,
+       COALESCE(SUM(amount) FILTER (WHERE type='expense'),0) AS expense
+     FROM transactions WHERE line_user_id=$1 AND to_char(txn_date,'YYYY-MM')=$2
+     GROUP BY txn_date ORDER BY txn_date`,
+    [lineUserId, ym]
+  );
+  return rows.map(r => ({ date: r.d, income: +r.income, expense: +r.expense }));
+}
+
+async function categoryBreakdown(lineUserId, ym, type = 'expense') {
+  const { rows } = await pool.query(
+    `SELECT COALESCE(NULLIF(category,''),'อื่นๆ') AS category, SUM(amount) AS amount
+     FROM transactions WHERE line_user_id=$1 AND to_char(txn_date,'YYYY-MM')=$2 AND type=$3
+     GROUP BY 1 ORDER BY amount DESC`,
+    [lineUserId, ym, type]
+  );
+  return rows.map(r => ({ category: r.category, amount: +r.amount }));
+}
+
+async function recentTxns(lineUserId, limit = 20) {
+  const { rows } = await pool.query(
+    `SELECT id, type, amount, category, note, txn_date::text AS d, created_at
+     FROM transactions WHERE line_user_id=$1 ORDER BY created_at DESC LIMIT $2`,
+    [lineUserId, limit]
+  );
+  return rows.map(r => ({
+    id: +r.id, type: r.type, amount: +r.amount,
+    category: r.category, note: r.note, date: r.d, created_at: r.created_at,
+  }));
+}
+
+async function deleteTxn(lineUserId, id) {
+  const { rowCount } = await pool.query(
+    `DELETE FROM transactions WHERE id=$1 AND line_user_id=$2`, [id, lineUserId]
+  );
+  return rowCount > 0;
+}
+
 module.exports = {
   pool, init, upsertUser, insertTxn, dayTotals, monthTotals,
   listMenus, createMenu, updateMenu, deleteMenu,
+  dailySeries, categoryBreakdown, recentTxns, deleteTxn,
 };
