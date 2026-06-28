@@ -341,7 +341,31 @@ function costCompareCard({ rows, periodLabel, topSpike }) {
   };
 }
 
+// ---------- เฟส 10: การ์ดดาวน์โหลดรายงาน Excel ----------
+function exportCard({ monthLabel, url, totals }) {
+  const body = [
+    sol(`รายงานบัญชีเดือน ${monthLabel} พร้อมแล้ว`, C.ink, { size: 'sm', weight: 'bold', wrap: true }),
+    sol('ไฟล์ Excel มีรายการทั้งหมด + สรุปรายรับ-รายจ่าย + กำไรสุทธิ + หมวดรายจ่าย ส่งให้บัญชีหรือใช้ยื่นภาษีได้เลย', C.soft, { size: 'xs', wrap: true, margin: 'sm' }),
+    sep('md'),
+    statRow('รายรับ', `${baht(totals.income)} ฿`, C.green),
+    statRow('รายจ่าย', `${baht(totals.expense)} ฿`, C.warn),
+    statRow('กำไรสุทธิ', `${totals.profit >= 0 ? '+' : '−'}${baht(Math.abs(totals.profit))} ฿`, totals.profit >= 0 ? C.blue : C.danger, true),
+    sol('ลิงก์ใช้ได้ภายใน 1 ชั่วโมง', C.faint, { size: 'xxs', margin: 'md' }),
+  ];
+  return {
+    altText: `รายงาน Excel เดือน ${monthLabel}`,
+    contents: bubble({
+      headerBox: header('รายงาน Excel', monthLabel, C.green),
+      bodyContents: body,
+      footerButton: {
+        type: 'button', style: 'primary', color: C.green, height: 'sm',
+        action: { type: 'uri', label: 'ดาวน์โหลด Excel', uri: url },
+      },
+    }),
+  };
+}
+
 module.exports = {
   confirmCard, summaryCard, deliveryCard, menuProfitCard, menuLinkCard, dailyPushCard,
-  goalCard, goalReachedCard, costCompareCard,
+  goalCard, goalReachedCard, costCompareCard, exportCard,
 };

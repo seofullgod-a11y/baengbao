@@ -4,6 +4,7 @@ const path = require('path');
 const db = require('./db');
 const ai = require('./ai');
 const flex = require('./flex');
+const xlsx = require('./export-xlsx');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -11,6 +12,28 @@ const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET || '';
 const CHANNEL_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
 const LIFF_ID = process.env.LIFF_ID || '';
 const liffUrl = () => (LIFF_ID ? `https://liff.line.me/${LIFF_ID}` : null);
+
+// เฟส 10: base URL สำหรับลิงก์ดาวน์โหลด (ตั้งเองได้ หรือเดาจาก request webhook)
+let detectedBaseUrl = process.env.PUBLIC_BASE_URL || '';
+function baseUrl() { return detectedBaseUrl.replace(/\/$/, ''); }
+
+// โทเคนลิงก์ดาวน์โหลด: เซ็นด้วย CHANNEL_SECRET หมดอายุใน 1 ชม.
+function signExport(userId, ym) {
+  const exp = Date.now() + 60 * 60 * 1000;
+  const payload = Buffer.from(`${userId}|${ym}|${exp}`).toString('base64url');
+  const sig = crypto.createHmac('sha256', CHANNEL_SECRET).update(payload).digest('base64url');
+  return `${payload}.${sig}`;
+}
+function verifyExport(token) {
+  const [payload, sig] = String(token || '').split('.');
+  if (!payload || !sig) return null;
+  const expected = crypto.createHmac('sha256', CHANNEL_SECRET).update(payload).digest('base64url');
+  const a = Buffer.from(sig), b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  const [userId, ym, exp] = Buffer.from(payload, 'base64url').toString().split('|');
+  if (!userId || !ym || Date.now() > +exp) return null;
+  return { userId, ym };
+}
 const DAILY_AI_LIMIT = +process.env.DAILY_AI_LIMIT || 80;
 const QUOTA_MSG = `วันนี้ใช้ผู้ช่วย AI ครบโควตาแล้วครับ (${DAILY_AI_LIMIT} ครั้ง/วัน) 🙏\nคำสั่งดูข้อมูลอย่าง "สรุป" "รายงาน" "เมนู" ยังใช้ได้ปกติ พรุ่งนี้ค่อยจดต่อได้เลย`;
 // นับการเรียก AI ต่อวัน คืน true ถ้าเกินโควตา
@@ -222,7 +245,8 @@ const HELP =
 • "รายงาน" — เปิดแดชบอร์ดกราฟ + แก้/ลบรายการ
 • "ปิดสรุป" / "เปิดสรุป" — ปิด/เปิดแจ้งเตือนสรุปรายวัน
 • "เป้าวันละ 5000" — ตั้งเป้ายอดขาย, พิมพ์ "เป้า" เพื่อดูความคืบหน้า
-• "ต้นทุน" — เทียบรายจ่ายแต่ละหมวดกับเดือนก่อน (เตือนของขึ้นราคา)`;
+• "ต้นทุน" — เทียบรายจ่ายแต่ละหมวดกับเดือนก่อน (เตือนของขึ้นราคา)
+• "ออกรายงาน" — ดาวน์โหลดไฟล์ Excel ส่งบัญชี/ยื่นภาษี (เพิ่ม "เดือนก่อน" ได้)`;
 
 // ---------- event handling ----------
 async function handleEvent(ev) {
@@ -340,6 +364,24 @@ async function handleEvent(ev) {
         return replyFlex(ev.replyToken, c.altText, c.contents);
       }
 
+      if (['ออกรายงาน', 'export', 'excel', 'ดาวน์โหลด', 'ไฟล์บัญชี', 'ส่งบัญชี', 'ยื่นภาษี'].some(k => raw.includes(k))) {
+        if (!baseUrl()) return replyText(ev.replyToken, 'ยังตั้งค่าลิงก์ดาวน์โหลดไม่เสร็จครับ ลองพิมพ์อีกครั้งในอีกสักครู่');
+        // เลือกเดือน: "เดือนก่อน"/"เดือนที่แล้ว" = เดือนก่อน, รูปแบบ YYYY-MM, ไม่งั้นเดือนนี้
+        let ym = bkkDate().slice(0, 7);
+        const ymMatch = raw.match(/20\d{2}-\d{2}/);
+        if (ymMatch) ym = ymMatch[0];
+        else if (/เดือนก่อน|เดือนที่แล้ว/.test(raw)) {
+          const [y, m] = ym.split('-').map(Number);
+          let py = y, pm = m - 1; if (pm < 1) { pm = 12; py--; }
+          ym = `${py}-${String(pm).padStart(2, '0')}`;
+        }
+        const totals = await db.monthTotals(userId, ym);
+        if (!totals.count) return replyText(ev.replyToken, `เดือน ${xlsx.thMonthLabel(ym)} ยังไม่มีรายการให้ออกรายงานครับ`);
+        const url = `${baseUrl()}/export.xlsx?t=${signExport(userId, ym)}`;
+        const c = flex.exportCard({ monthLabel: xlsx.thMonthLabel(ym), url, totals });
+        return replyFlex(ev.replyToken, c.altText, c.contents);
+      }
+
       if (await overQuota(userId)) return replyText(ev.replyToken, QUOTA_MSG);
       const parsed = await ai.parseText(raw);
       if (!parsed.is_transaction)
@@ -386,6 +428,10 @@ app.use('/webhook', express.json({
 }));
 
 app.post('/webhook', (req, res) => {
+  if (!detectedBaseUrl && req.headers.host) {
+    const proto = (req.headers['x-forwarded-proto'] || 'https').split(',')[0];
+    detectedBaseUrl = `${proto}://${req.headers.host}`;
+  }
   const signature = req.get('x-line-signature') || '';
   const expected = crypto.createHmac('SHA256', CHANNEL_SECRET).update(req.rawBody || Buffer.from('')).digest('base64');
   if (signature !== expected) {
@@ -400,6 +446,26 @@ app.post('/webhook', (req, res) => {
 
 app.get('/', (_req, res) => res.send('แบ่งเบา bot ok'));
 app.get('/health', (_req, res) => res.json({ ok: true }));
+
+// เฟส 10: ดาวน์โหลดรายงาน Excel (ตรวจโทเคนที่เซ็นไว้)
+app.get('/export.xlsx', async (req, res) => {
+  try {
+    const v = verifyExport(req.query.t);
+    if (!v) return res.status(403).send('ลิงก์หมดอายุหรือไม่ถูกต้อง — พิมพ์ "ออกรายงาน" ในไลน์เพื่อขอลิงก์ใหม่');
+    const [rows, totals, expenseCats] = await Promise.all([
+      db.txnsForMonth(v.userId, v.ym),
+      db.monthTotals(v.userId, v.ym),
+      db.categoryBreakdown(v.userId, v.ym, 'expense'),
+    ]);
+    const buf = await xlsx.buildMonthlyWorkbook({ ym: v.ym, rows, totals, expenseCats });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="baengbao-${v.ym}.xlsx"`);
+    res.send(Buffer.from(buf));
+  } catch (e) {
+    console.error('[export]', e.message);
+    res.status(500).send('สร้างไฟล์ไม่สำเร็จ ลองใหม่อีกครั้งนะครับ');
+  }
+});
 
 // ---------- mini-app (LIFF) ----------
 // เสิร์ฟหน้าเว็บจัดการเมนู

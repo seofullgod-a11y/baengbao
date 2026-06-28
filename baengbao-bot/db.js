@@ -235,6 +235,21 @@ async function categoryCompare(lineUserId, thisStart, thisEnd, prevStart, prevEn
   return rows.map(r => ({ category: r.category, cur: +r.cur, prev: +r.prev }));
 }
 
+// เฟส 10: ดึงทุกรายการในเดือน (สำหรับ export)
+async function txnsForMonth(lineUserId, ym) {
+  const { rows } = await pool.query(
+    `SELECT txn_date::text AS d, type, amount, category, note, source, created_at
+       FROM transactions
+      WHERE line_user_id=$1 AND to_char(txn_date,'YYYY-MM')=$2
+      ORDER BY txn_date ASC, created_at ASC`,
+    [lineUserId, ym]
+  );
+  return rows.map(r => ({
+    date: r.d, type: r.type, amount: +r.amount,
+    category: r.category || '', note: r.note || '', source: r.source || '',
+  }));
+}
+
 async function recentTxns(lineUserId, limit = 20) {
   const { rows } = await pool.query(
     `SELECT id, type, amount, category, note, txn_date::text AS d, created_at
@@ -270,5 +285,5 @@ module.exports = {
   listMenus, createMenu, updateMenu, deleteMenu,
   dailySeries, categoryBreakdown, recentTxns, deleteTxn,
   bumpUsage, setDailySummary, activeUsersForDaily, getState, setState,
-  setGoal, getGoals, categoryCompare,
+  setGoal, getGoals, categoryCompare, txnsForMonth,
 };
