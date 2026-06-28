@@ -5,6 +5,7 @@ const db = require('./db');
 const ai = require('./ai');
 const flex = require('./flex');
 const xlsx = require('./export-xlsx');
+const richmenu = require('./richmenu');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -57,6 +58,9 @@ function bkkHour(d = new Date()) {
 function bkkYesterday() {
   const d = new Date(Date.now() - 24 * 3600 * 1000);
   return bkkDate(d);
+}
+function bkkDaysAgo(n) {
+  return bkkDate(new Date(Date.now() - n * 24 * 3600 * 1000));
 }
 const TH_MON = ['', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 function monthCompareRanges(today) {
@@ -246,6 +250,7 @@ const HELP =
 • "ปิดสรุป" / "เปิดสรุป" — ปิด/เปิดแจ้งเตือนสรุปรายวัน
 • "เป้าวันละ 5000" — ตั้งเป้ายอดขาย, พิมพ์ "เป้า" เพื่อดูความคืบหน้า
 • "ต้นทุน" — เทียบรายจ่ายแต่ละหมวดกับเดือนก่อน (เตือนของขึ้นราคา)
+• "สัปดาห์" — สรุป 7 วันล่าสุด + เทียบสัปดาห์ก่อน
 • "ออกรายงาน" — ดาวน์โหลดไฟล์ Excel ส่งบัญชี/ยื่นภาษี (เพิ่ม "เดือนก่อน" ได้)`;
 
 // ---------- event handling ----------
@@ -364,6 +369,18 @@ async function handleEvent(ev) {
         return replyFlex(ev.replyToken, c.altText, c.contents);
       }
 
+      if (['สัปดาห์', 'รายสัปดาห์', '7วัน', '7 วัน', 'อาทิตย์'].some(k => raw.includes(k))) {
+        const today = bkkDate();
+        const tStart = bkkDaysAgo(6), lStart = bkkDaysAgo(13), lEnd = bkkDaysAgo(7);
+        const [thisWeek, lastWeek] = await Promise.all([
+          db.rangeTotals(userId, tStart, today),
+          db.rangeTotals(userId, lStart, lEnd),
+        ]);
+        const dlabel = s => `${+s.slice(8)} ${TH_MON[+s.slice(5, 7)]}`;
+        const c = flex.weeklyCard({ rangeLabel: `${dlabel(tStart)} – ${dlabel(today)}`, thisWeek, lastWeek, link: liffUrl() });
+        return replyFlex(ev.replyToken, c.altText, c.contents);
+      }
+
       if (['ออกรายงาน', 'export', 'excel', 'ดาวน์โหลด', 'ไฟล์บัญชี', 'ส่งบัญชี', 'ยื่นภาษี'].some(k => raw.includes(k))) {
         if (!baseUrl()) return replyText(ev.replyToken, 'ยังตั้งค่าลิงก์ดาวน์โหลดไม่เสร็จครับ ลองพิมพ์อีกครั้งในอีกสักครู่');
         // เลือกเดือน: "เดือนก่อน"/"เดือนที่แล้ว" = เดือนก่อน, รูปแบบ YYYY-MM, ไม่งั้นเดือนนี้
@@ -447,6 +464,20 @@ app.post('/webhook', (req, res) => {
 app.get('/', (_req, res) => res.send('แบ่งเบา bot ok'));
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
+// เฟส 14: ตั้ง Rich Menu (กดครั้งเดียว) — ต้องตั้ง ADMIN_KEY ก่อน
+app.get('/admin/setup-richmenu', async (req, res) => {
+  const key = process.env.ADMIN_KEY;
+  if (!key) return res.status(404).send('ปิดอยู่ — ตั้ง ADMIN_KEY ใน env ก่อนครับ');
+  if (req.query.key !== key) return res.status(403).send('คีย์ไม่ถูกต้อง');
+  try {
+    const id = await richmenu.setupRichMenu(CHANNEL_TOKEN, path.join(__dirname, 'richmenu.png'));
+    res.send('ตั้ง Rich Menu สำเร็จ! richMenuId = ' + id + '\nเปิดแชทแบ่งเบาในมือถือ จะเห็นปุ่มลัดด้านล่างแล้ว (อาจต้องปิด-เปิดแชทใหม่)');
+  } catch (e) {
+    console.error('[richmenu]', e.message);
+    res.status(500).send('ตั้งไม่สำเร็จ: ' + e.message);
+  }
+});
+
 // เฟส 10: ดาวน์โหลดรายงาน Excel (ตรวจโทเคนที่เซ็นไว้)
 app.get('/export.xlsx', async (req, res) => {
   try {
@@ -495,7 +526,7 @@ async function liffAuth(req, res, next) {
   }
 }
 
-app.use(['/api/menus', '/api/stats', '/api/transactions', '/api/goals', '/api/cost-compare', '/api/settings', '/api/export-link'], express.json(), liffAuth);
+app.use(['/api/menus', '/api/stats', '/api/transactions', '/api/goals', '/api/cost-compare', '/api/settings', '/api/export-link', '/api/recurring'], express.json(), liffAuth);
 
 app.get('/api/menus', async (req, res) => {
   await db.upsertUser(req.userId, req.displayName);
@@ -544,6 +575,16 @@ app.get('/api/transactions', async (req, res) => {
 app.delete('/api/transactions/:id', async (req, res) => {
   res.json({ ok: await db.deleteTxn(req.userId, +req.params.id) });
 });
+app.put('/api/transactions/:id', async (req, res) => {
+  const b = req.body || {};
+  const type = b.type === 'income' ? 'income' : 'expense';
+  const amount = Math.round((+b.amount || 0) * 100) / 100;
+  if (!(amount > 0)) return res.status(400).json({ error: 'ยอดต้องมากกว่า 0' });
+  const ok = await db.updateTxn(req.userId, +req.params.id, {
+    type, amount, category: (b.category || '').trim(), note: (b.note || '').trim(),
+  });
+  res.json({ ok });
+});
 
 // ---- เฟส 8: เป้ายอดขาย ----
 app.get('/api/goals', async (req, res) => {
@@ -591,6 +632,28 @@ app.get('/api/export-link', async (req, res) => {
   res.json({ url: `${baseUrl()}/export.xlsx?t=${signExport(req.userId, ym)}`, month: ym });
 });
 
+// ---- เฟส 13: รายจ่ายประจำ ----
+app.get('/api/recurring', async (req, res) => {
+  res.json(await db.listRecurring(req.userId));
+});
+app.post('/api/recurring', async (req, res) => {
+  const b = req.body || {};
+  const name = (b.name || '').trim();
+  const amount = Math.round((+b.amount || 0) * 100) / 100;
+  const day = Math.min(Math.max(parseInt(b.day, 10) || 1, 1), 28);
+  if (!name) return res.status(400).json({ error: 'ต้องมีชื่อรายการ' });
+  if (!(amount > 0)) return res.status(400).json({ error: 'ยอดต้องมากกว่า 0' });
+  const id = await db.createRecurring(req.userId, { name, amount, day });
+  res.json({ id });
+});
+app.post('/api/recurring/:id/toggle', async (req, res) => {
+  await db.toggleRecurring(req.userId, +req.params.id, !!(req.body || {}).active);
+  res.json({ ok: true });
+});
+app.delete('/api/recurring/:id', async (req, res) => {
+  res.json({ ok: await db.deleteRecurring(req.userId, +req.params.id) });
+});
+
 // ---------- เฟส 7: แจ้งเตือนสรุปรายวันอัตโนมัติ ----------
 const DAILY_SUMMARY_ENABLED = (process.env.DAILY_SUMMARY_ENABLED || 'true') !== 'false';
 const DAILY_SUMMARY_HOUR = Math.min(Math.max(+process.env.DAILY_SUMMARY_HOUR || 21, 0), 23);
@@ -628,9 +691,39 @@ async function dailySummaryTick() {
   } catch (e) { console.error('[dailyTick]', e.message); }
 }
 
+// เฟส 13: ลงรายจ่ายประจำที่ถึงกำหนดในเดือนนี้
+async function scanRecurring() {
+  const today = bkkDate(), ym = today.slice(0, 7), day = +today.slice(8, 10);
+  const due = await db.recurringToRun(ym);
+  let n = 0;
+  for (const r of due) {
+    if (day < r.day) continue; // ยังไม่ถึงวันของเดือนนี้
+    try {
+      await db.insertTxn({
+        lineUserId: r.userId, type: 'expense', amount: r.amount,
+        category: r.name, note: 'รายจ่ายประจำ', items: null, source: 'recurring',
+        txnDate: `${ym}-${String(Math.min(r.day, 28)).padStart(2, '0')}`,
+      });
+      await db.markRecurringRun(r.id, ym);
+      n++;
+    } catch (e) { console.error('[recurring]', r.id, e.message); }
+  }
+  if (n) console.log(`[recurring] posted ${n} item(s) for ${ym}`);
+}
+async function recurringTick() {
+  try {
+    const today = bkkDate();
+    if (await db.getState('last_recurring_scan') === today) return;
+    await db.setState('last_recurring_scan', today);
+    await scanRecurring();
+  } catch (e) { console.error('[recurringTick]', e.message); }
+}
+
 db.init()
   .then(() => {
     app.listen(PORT, () => console.log(`แบ่งเบา bot running on :${PORT}`));
+    recurringTick(); // เช็กรายจ่ายประจำตอนเริ่ม
+    setInterval(recurringTick, 60 * 1000);
     if (DAILY_SUMMARY_ENABLED) {
       console.log(`[dailyPush] enabled, will send around ${DAILY_SUMMARY_HOUR}:00 (Asia/Bangkok)`);
       setInterval(dailySummaryTick, 60 * 1000); // เช็กทุกนาที

@@ -62,6 +62,19 @@ async function init() {
       v TEXT
     );
   `);
+  // เฟส 13: รายจ่ายประจำ (ค่าเช่า เงินเดือน ฯลฯ)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS recurring_expenses (
+      id           BIGSERIAL PRIMARY KEY,
+      line_user_id TEXT NOT NULL,
+      name         TEXT NOT NULL,
+      amount       NUMERIC(12,2) NOT NULL,
+      day_of_month INT NOT NULL DEFAULT 1,
+      active       BOOLEAN DEFAULT TRUE,
+      last_run_ym  TEXT,
+      created_at   TIMESTAMPTZ DEFAULT now()
+    );
+  `);
   console.log('[db] schema ready');
 }
 
@@ -92,6 +105,46 @@ async function getDailySummary(lineUserId) {
     `SELECT COALESCE(daily_summary, TRUE) AS on FROM users WHERE line_user_id=$1`, [lineUserId]
   );
   return rows[0] ? !!rows[0].on : true;
+}
+
+// เฟส 13: รายจ่ายประจำ
+async function createRecurring(lineUserId, { name, amount, day }) {
+  const { rows } = await pool.query(
+    `INSERT INTO recurring_expenses (line_user_id, name, amount, day_of_month)
+     VALUES ($1,$2,$3,$4) RETURNING id`,
+    [lineUserId, name, amount, Math.min(Math.max(day || 1, 1), 28)]
+  );
+  return +rows[0].id;
+}
+async function listRecurring(lineUserId) {
+  const { rows } = await pool.query(
+    `SELECT id, name, amount, day_of_month, active, last_run_ym
+     FROM recurring_expenses WHERE line_user_id=$1 ORDER BY day_of_month ASC, id ASC`,
+    [lineUserId]
+  );
+  return rows.map(r => ({ id: +r.id, name: r.name, amount: +r.amount, day: r.day_of_month, active: r.active, lastRun: r.last_run_ym }));
+}
+async function deleteRecurring(lineUserId, id) {
+  const { rowCount } = await pool.query(
+    `DELETE FROM recurring_expenses WHERE id=$1 AND line_user_id=$2`, [id, lineUserId]
+  );
+  return rowCount > 0;
+}
+async function toggleRecurring(lineUserId, id, active) {
+  await pool.query(`UPDATE recurring_expenses SET active=$3 WHERE id=$1 AND line_user_id=$2`, [id, lineUserId, !!active]);
+}
+// รายการที่ยังไม่ได้ลงในเดือน ym (สำหรับ scheduler)
+async function recurringToRun(ym) {
+  const { rows } = await pool.query(
+    `SELECT id, line_user_id, name, amount, day_of_month
+     FROM recurring_expenses
+     WHERE active = TRUE AND (last_run_ym IS NULL OR last_run_ym <> $1)`,
+    [ym]
+  );
+  return rows.map(r => ({ id: +r.id, userId: r.line_user_id, name: r.name, amount: +r.amount, day: r.day_of_month }));
+}
+async function markRecurringRun(id, ym) {
+  await pool.query(`UPDATE recurring_expenses SET last_run_ym=$2 WHERE id=$1`, [id, ym]);
 }
 
 // ผู้ใช้ที่เปิดแจ้งเตือน และมีรายการในวันที่กำหนด
@@ -156,6 +209,20 @@ async function monthTotals(lineUserId, ym) {
        COUNT(*) AS count
      FROM transactions WHERE line_user_id=$1 AND to_char(txn_date,'YYYY-MM')=$2`,
     [lineUserId, ym]
+  );
+  const r = rows[0];
+  return { income: +r.income, expense: +r.expense, count: +r.count, profit: +r.income - +r.expense };
+}
+
+// รวมยอดในช่วงวันที่ [start, end] (สำหรับสรุปสัปดาห์)
+async function rangeTotals(lineUserId, start, end) {
+  const { rows } = await pool.query(
+    `SELECT
+       COALESCE(SUM(amount) FILTER (WHERE type='income'), 0)  AS income,
+       COALESCE(SUM(amount) FILTER (WHERE type='expense'), 0) AS expense,
+       COUNT(*) AS count
+     FROM transactions WHERE line_user_id=$1 AND txn_date BETWEEN $2 AND $3`,
+    [lineUserId, start, end]
   );
   const r = rows[0];
   return { income: +r.income, expense: +r.expense, count: +r.count, profit: +r.income - +r.expense };
@@ -275,6 +342,16 @@ async function deleteTxn(lineUserId, id) {
   return rowCount > 0;
 }
 
+// แก้ไขรายการ (ประเภท/ยอด/หมวด/โน้ต)
+async function updateTxn(lineUserId, id, { type, amount, category, note }) {
+  const { rowCount } = await pool.query(
+    `UPDATE transactions SET type=$3, amount=$4, category=$5, note=$6
+     WHERE id=$1 AND line_user_id=$2`,
+    [id, lineUserId, type, amount, category || null, note || null]
+  );
+  return rowCount > 0;
+}
+
 // เพิ่มตัวนับการเรียก AI ต่อผู้ใช้ต่อวัน แล้วคืนค่าจำนวนล่าสุด (atomic)
 async function bumpUsage(lineUserId, dateStr) {
   const { rows } = await pool.query(
@@ -287,9 +364,10 @@ async function bumpUsage(lineUserId, dateStr) {
 }
 
 module.exports = {
-  pool, init, upsertUser, insertTxn, dayTotals, monthTotals,
+  pool, init, upsertUser, insertTxn, dayTotals, monthTotals, rangeTotals,
   listMenus, createMenu, updateMenu, deleteMenu,
-  dailySeries, categoryBreakdown, recentTxns, deleteTxn,
+  dailySeries, categoryBreakdown, recentTxns, deleteTxn, updateTxn,
   bumpUsage, setDailySummary, activeUsersForDaily, getState, setState,
   setGoal, getGoals, getDailySummary, categoryCompare, txnsForMonth,
+  createRecurring, listRecurring, deleteRecurring, toggleRecurring, recurringToRun, markRecurringRun,
 };

@@ -365,7 +365,41 @@ function exportCard({ monthLabel, url, totals }) {
   };
 }
 
+// ---------- สรุปรายสัปดาห์ (7 วันล่าสุด vs 7 วันก่อนหน้า) ----------
+function weeklyCard({ rangeLabel, thisWeek, lastWeek, link }) {
+  const diff = thisWeek.profit - lastWeek.profit;
+  const up = diff >= 0;
+  const cmp = (lastWeek.count || thisWeek.count)
+    ? `${up ? '▲' : '▼'} ${up ? '+' : '−'}${baht(Math.abs(diff))} ฿ จากสัปดาห์ก่อน`
+    : 'เริ่มเก็บสถิติสัปดาห์นี้';
+  const avg = thisWeek.income / 7;
+  const body = [
+    sol('7 วันล่าสุด', C.faint, { size: 'xs' }),
+    statRow('ยอดขายรวม', `${baht(thisWeek.income)} ฿`, C.green),
+    statRow('รายจ่ายรวม', `${baht(thisWeek.expense)} ฿`, C.warn),
+    sep('md'),
+    { type: 'box', layout: 'horizontal', margin: 'sm', contents: [
+      sol('กำไรสุทธิ', C.ink, { size: 'md', weight: 'bold', gravity: 'center', flex: 0 }),
+      sol(`${thisWeek.profit >= 0 ? '+' : '−'}${baht(Math.abs(thisWeek.profit))} ฿`,
+        thisWeek.profit >= 0 ? C.blue : C.danger, { size: 'xl', weight: 'bold', align: 'end', gravity: 'center' }),
+    ] },
+    { type: 'box', layout: 'vertical', margin: 'md', backgroundColor: up ? '#E3F8EF' : '#FDEBE8',
+      cornerRadius: '10px', paddingAll: '10px', contents: [
+        sol(cmp, up ? C.green : C.danger, { size: 'sm', weight: 'bold', align: 'center', wrap: true }),
+      ] },
+    sol(`เฉลี่ยขายวันละ ~${baht(avg)} ฿ • ${thisWeek.count} รายการ`, C.faint, { size: 'xxs', align: 'center', margin: 'sm' }),
+  ];
+  return {
+    altText: `สรุปสัปดาห์: กำไร ${thisWeek.profit >= 0 ? '+' : '−'}${baht(Math.abs(thisWeek.profit))} ฿`,
+    contents: bubble({
+      headerBox: header('สรุปรายสัปดาห์', rangeLabel, C.blueDeep),
+      bodyContents: body,
+      footerButton: linkButton('ดูรายงานเต็ม', link ? `${link}?tab=report` : null),
+    }),
+  };
+}
+
 module.exports = {
   confirmCard, summaryCard, deliveryCard, menuProfitCard, menuLinkCard, dailyPushCard,
-  goalCard, goalReachedCard, costCompareCard, exportCard,
+  goalCard, goalReachedCard, costCompareCard, exportCard, weeklyCard,
 };

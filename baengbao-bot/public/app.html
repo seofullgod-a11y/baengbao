@@ -167,6 +167,27 @@
   .costrow .cs{font-size:11px;color:var(--ink-faint,#9aa9c2);margin-top:2px}
   .cbadge{font-weight:700;font-size:13.5px;flex:none}
   .warnbox{background:#fdebe8;border-radius:10px;padding:11px 13px;color:var(--danger,#e5484d);font-weight:600;font-size:13.5px;margin-bottom:6px}
+  .typetoggle{display:flex;gap:8px}
+  .typetoggle .tt{flex:1;border:1.5px solid var(--border);background:#fff;border-radius:11px;padding:12px;font-family:"Kanit";font-weight:600;font-size:15px;color:var(--ink-soft);cursor:pointer}
+  .typetoggle .tt.on[data-t="income"]{background:var(--profit);border-color:var(--profit);color:#fff}
+  .typetoggle .tt.on[data-t="expense"]{background:var(--warn,#f0883e);border-color:var(--warn,#f0883e);color:#fff}
+  .tx .edit{background:none;border:none;color:var(--blue);cursor:pointer;padding:6px;margin-right:-2px}
+  .tx .edit svg{width:17px;height:17px}
+  .recur{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border)}
+  .recur.off{opacity:.55}
+  .rc-mid{flex:1;min-width:0}
+  .rc-name{font-weight:600;font-size:14.5px}
+  .rc-sub{font-size:12px;color:var(--ink-soft);margin-top:2px}
+  .switch.sm{width:42px;height:24px;flex:none}
+  .switch.sm::after{width:18px;height:18px}
+  .switch.sm.on::after{left:21px}
+  .recur .trash{background:none;border:none;color:#c3cfe2;cursor:pointer;padding:5px}
+  .recur .trash svg{width:17px;height:17px}
+  .recur-add{margin-top:14px;display:flex;flex-direction:column;gap:9px}
+  .recur-add input{border:1.5px solid var(--border);border-radius:10px;padding:11px 12px;font-family:"IBM Plex Sans Thai";font-size:15px;width:100%}
+  .recur-add-row{display:flex;gap:9px}
+  .recur-add-row input{flex:1;min-width:0}
+  .recur-add-row button{flex:none;border:none;background:var(--profit);color:#fff;border-radius:10px;padding:0 18px;font-family:"Kanit";font-weight:600;font-size:14px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -243,6 +264,24 @@
   <button class="cancel" id="cancelBtn">ยกเลิก</button>
 </div>
 <div class="toast" id="toast"></div>
+
+<!-- TX EDIT SHEET -->
+<div class="sheet-bg" id="txSheetBg"></div>
+<div class="sheet" id="txSheet">
+  <h3>แก้ไขรายการ</h3>
+  <div class="field">
+    <label>ประเภท</label>
+    <div class="typetoggle">
+      <button type="button" class="tt" data-t="income" id="ttInc">รายรับ</button>
+      <button type="button" class="tt" data-t="expense" id="ttExp">รายจ่าย</button>
+    </div>
+  </div>
+  <div class="field num"><label>ยอดเงิน (฿)</label><input id="txAmount" type="number" inputmode="decimal" placeholder="0" /></div>
+  <div class="field"><label>หมวดหมู่</label><input id="txCat" placeholder="เช่น ค่าหมู, ขายอาหาร" /></div>
+  <div class="field"><label>รายละเอียด (ไม่บังคับ)</label><input id="txNote" placeholder="โน้ตเพิ่มเติม" /></div>
+  <button class="save" id="txSaveBtn">บันทึกการแก้ไข</button>
+  <button class="cancel" id="txCancelBtn">ยกเลิก</button>
+</div>
 
 <script>
 const API = location.origin;
@@ -374,6 +413,7 @@ function drawCatChart(cats){
 }
 
 function renderTxns(txns){
+  window._txns=txns;
   const el=$('txList');
   if(!txns.length){el.innerHTML='<div class="empty" style="padding:24px"><p>ยังไม่มีรายการ</p></div>';return;}
   el.innerHTML=txns.map(x=>{
@@ -385,9 +425,32 @@ function renderTxns(txns){
       :'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>'}</div>
       <div class="mid"><div class="t1">${escapeHtml(title)}</div><div class="t2">${d}${x.category?' · '+escapeHtml(x.category):''}</div></div>
       <div class="amt">${inc?'+':'−'}${baht(x.amount)} ฿</div>
+      <button class="edit" onclick="openTxEdit(${x.id})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
       <button class="trash" onclick="delTxn(${x.id})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/></svg></button></div>`;
   }).join('');
 }
+let txEditId=null, txEditType='expense';
+function setTxType(t){txEditType=t;$('ttInc').classList.toggle('on',t==='income');$('ttExp').classList.toggle('on',t==='expense');}
+window.openTxEdit=function(id){
+  const x=(window._txns||[]).find(t=>t.id===id);if(!x)return;
+  txEditId=id;setTxType(x.type);
+  $('txAmount').value=x.amount;$('txCat').value=x.category||'';$('txNote').value=x.note||'';
+  $('txSheet').classList.add('show');$('txSheetBg').classList.add('show');
+};
+function closeTxSheet(){$('txSheet').classList.remove('show');$('txSheetBg').classList.remove('show');txEditId=null;}
+async function saveTx(){
+  const amount=+$('txAmount').value;
+  if(!(amount>0)){toast('ใส่ยอดเงินก่อน');return;}
+  try{
+    await api('/api/transactions/'+txEditId,{method:'PUT',body:JSON.stringify({type:txEditType,amount,category:$('txCat').value.trim(),note:$('txNote').value.trim()})});
+    toast('แก้ไขแล้ว');closeTxSheet();await loadReport();
+  }catch(e){toast('บันทึกไม่สำเร็จ');}
+}
+$('ttInc').addEventListener('click',()=>setTxType('income'));
+$('ttExp').addEventListener('click',()=>setTxType('expense'));
+$('txSaveBtn').addEventListener('click',saveTx);
+$('txCancelBtn').addEventListener('click',closeTxSheet);
+$('txSheetBg').addEventListener('click',closeTxSheet);
 window.delTxn=async function(id){if(!confirm('ลบรายการนี้?'))return;try{await api('/api/transactions/'+id,{method:'DELETE'});toast('ลบแล้ว');await loadReport();}catch(e){toast('ลบไม่สำเร็จ');}};
 
 $('prevM').addEventListener('click',()=>{curMonth=addMonth(curMonth,-1);loadReport();});
@@ -442,7 +505,20 @@ async function loadSettings(){
         <div class="sd" style="margin-bottom:13px">ดาวน์โหลดไฟล์ Excel รายเดือน (รายการ + สรุป + หมวดรายจ่าย) ส่งให้บัญชีหรือยื่นภาษีได้เลย</div>
         <a class="bigbtn" href="#" onclick="return doExport(thisMonth())"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>ดาวน์โหลดเดือนนี้</a>
         <a class="bigbtn ghost" href="#" onclick="return doExport(addMonth(thisMonth(),-1))" style="margin-top:10px">ดาวน์โหลดเดือนก่อน</a>
+      </div>
+      <div class="panel"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v6h6"/><path d="M3 13a9 9 0 1 0 3-7.7L3 8"/></svg>รายจ่ายประจำ</h3>
+        <div class="sd" style="margin-bottom:12px">ตั้งครั้งเดียว (ค่าเช่า เงินเดือน ค่าน้ำค่าไฟ) ระบบลงรายจ่ายให้อัตโนมัติทุกเดือน</div>
+        <div id="recurBox"><div class="loading"><div class="spin"></div>กำลังโหลด...</div></div>
+        <div class="recur-add">
+          <input id="rcName" placeholder="ชื่อ เช่น ค่าเช่าร้าน" />
+          <div class="recur-add-row">
+            <input id="rcAmount" type="number" inputmode="decimal" placeholder="ยอด (฿)" />
+            <input id="rcDay" type="number" inputmode="numeric" min="1" max="28" placeholder="วันที่ (1-28)" />
+            <button onclick="addRecurring()">เพิ่ม</button>
+          </div>
+        </div>
       </div>`;
+    loadRecurring();
   }catch(e){$('settingsBox').innerHTML='<div class="empty"><p>โหลดไม่สำเร็จ</p></div>';}
 }
 window.toggleDaily=async function(){
@@ -456,6 +532,38 @@ window.doExport=async function(ym){
     if(window.liff&&liff.openWindow){liff.openWindow({url:r.url,external:true});}else{window.open(r.url,'_blank');}
   }catch(e){toast('สร้างลิงก์ไม่สำเร็จ');}
   return false;
+};
+
+/* ---------- recurring expenses ---------- */
+async function loadRecurring(){
+  try{
+    const items=await api('/api/recurring');
+    const box=$('recurBox');
+    if(!items.length){box.innerHTML='<div class="sd" style="padding:8px 0 4px;color:#9aa9c2">ยังไม่มีรายจ่ายประจำ</div>';return;}
+    box.innerHTML=items.map(r=>`<div class="recur ${r.active?'':'off'}">
+      <div class="rc-mid"><div class="rc-name">${escapeHtml(r.name)}</div><div class="rc-sub">ทุกวันที่ ${r.day} · ${baht(r.amount)} ฿/เดือน${r.active?'':' · ปิดอยู่'}</div></div>
+      <div class="switch sm ${r.active?'on':''}" onclick="toggleRecur(${r.id},${r.active?0:1})"></div>
+      <button class="trash" onclick="delRecur(${r.id})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/></svg></button>
+    </div>`).join('');
+  }catch(e){$('recurBox').innerHTML='<div class="sd">โหลดไม่สำเร็จ</div>';}
+}
+window.addRecurring=async function(){
+  const name=$('rcName').value.trim(),amount=+$('rcAmount').value,day=parseInt($('rcDay').value,10);
+  if(!name){toast('ใส่ชื่อรายการก่อน');return;}
+  if(!(amount>0)){toast('ใส่ยอดเงิน');return;}
+  if(!(day>=1&&day<=28)){toast('วันที่ต้องเป็น 1-28');return;}
+  try{await api('/api/recurring',{method:'POST',body:JSON.stringify({name,amount,day})});
+    $('rcName').value='';$('rcAmount').value='';$('rcDay').value='';toast('เพิ่มแล้ว');loadRecurring();
+  }catch(e){toast(e.message||'เพิ่มไม่สำเร็จ');}
+};
+window.toggleRecur=async function(id,active){
+  try{await api('/api/recurring/'+id+'/toggle',{method:'POST',body:JSON.stringify({active:!!active})});loadRecurring();}
+  catch(e){toast('ไม่สำเร็จ');}
+};
+window.delRecur=async function(id){
+  if(!confirm('ลบรายจ่ายประจำนี้?'))return;
+  try{await api('/api/recurring/'+id,{method:'DELETE'});toast('ลบแล้ว');loadRecurring();}
+  catch(e){toast('ลบไม่สำเร็จ');}
 };
 
 /* ---------- cost compare (in report) ---------- */
