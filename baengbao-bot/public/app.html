@@ -33,7 +33,7 @@
 
   .tabs{position:sticky;top:0;z-index:30;background:linear-gradient(150deg,var(--blue),var(--blue-deep));padding-bottom:0}
   .tabs .wrap{display:flex;gap:6px}
-  .tab{flex:1;text-align:center;padding:12px 0 13px;color:rgba(255,255,255,.7);font-family:"Kanit";font-weight:600;font-size:15px;border-bottom:3px solid transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px}
+  .tab{flex:1;text-align:center;padding:12px 0 13px;color:rgba(255,255,255,.7);font-family:"Kanit";font-weight:600;font-size:14px;border-bottom:3px solid transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px}
   .tab svg{width:17px;height:17px}
   .tab.active{color:#fff;border-bottom-color:#fff}
 
@@ -136,6 +136,37 @@
   @keyframes sp{to{transform:rotate(360deg)}}
   .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:11px 18px;border-radius:100px;font-size:14px;z-index:60;opacity:0;transition:.25s;pointer-events:none}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  /* ---- goals / settings / cost ---- */
+  .goalcard{background:var(--card);border:1px solid var(--border);border-radius:var(--r-md);padding:18px;margin-bottom:14px}
+  .goalcard .gh{font-size:13px;color:var(--ink-faint,#9aa9c2);margin-bottom:6px}
+  .goalcard .grow{display:flex;justify-content:space-between;align-items:baseline}
+  .goalcard .gnow{font-family:"Kanit";font-weight:700;font-size:20px;color:var(--ink)}
+  .goalcard .gtarget{font-size:13px;color:var(--ink-soft)}
+  .pbar{height:10px;background:#edf2fb;border-radius:6px;overflow:hidden;margin:10px 0 8px}
+  .pfill{height:100%;border-radius:6px;background:var(--blue);transition:width .5s ease}
+  .pfill.done{background:var(--profit)}
+  .ghint{font-size:12.5px;color:var(--ink-soft)}
+  .ghint.done{color:var(--profit);font-weight:600}
+  .goalform{display:flex;gap:10px;margin-top:6px}
+  .goalform input{flex:1;min-width:0;border:1.5px solid var(--border);border-radius:10px;padding:11px 12px;font-family:"IBM Plex Sans Thai";font-size:15px}
+  .goalform button{border:none;background:var(--blue);color:#fff;border-radius:10px;padding:0 16px;font-family:"Kanit";font-weight:600;font-size:14px;cursor:pointer}
+  .setrow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 0;border-bottom:1px solid var(--border)}
+  .setrow:last-child{border-bottom:none}
+  .setrow .sl{font-weight:600;font-size:14.5px}
+  .setrow .sd{font-size:12.5px;color:var(--ink-soft);margin-top:3px}
+  .switch{flex:none;width:48px;height:28px;border-radius:16px;background:#cdd9ee;position:relative;cursor:pointer;transition:.2s}
+  .switch.on{background:var(--profit)}
+  .switch::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+  .switch.on::after{left:23px}
+  .bigbtn{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;border:none;background:var(--profit);color:#fff;border-radius:12px;padding:14px;font-family:"Kanit";font-weight:600;font-size:15px;cursor:pointer;text-decoration:none;margin-top:4px}
+  .bigbtn svg{width:18px;height:18px}
+  .bigbtn.ghost{background:#eef3fc;color:var(--blue)}
+  .costrow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--border)}
+  .costrow:last-child{border-bottom:none}
+  .costrow .cn{font-weight:600;font-size:14px}
+  .costrow .cs{font-size:11px;color:var(--ink-faint,#9aa9c2);margin-top:2px}
+  .cbadge{font-weight:700;font-size:13.5px;flex:none}
+  .warnbox{background:#fdebe8;border-radius:10px;padding:11px 13px;color:var(--danger,#e5484d);font-weight:600;font-size:13.5px;margin-bottom:6px}
 </style>
 </head>
 <body>
@@ -149,6 +180,8 @@
   <div class="wrap">
     <div class="tab active" data-tab="menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11h18"/><path d="M5 11V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v4"/><path d="M5 11v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8"/></svg>เมนู</div>
     <div class="tab" data-tab="report"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6" rx="1"/><rect x="12" y="7" width="3" height="10" rx="1"/><rect x="17" y="13" width="3" height="4" rx="1"/></svg>รายงาน</div>
+    <div class="tab" data-tab="goals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>เป้า</div>
+    <div class="tab" data-tab="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>ตั้งค่า</div>
   </div>
 </div>
 
@@ -176,6 +209,21 @@
       <button id="nextM"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
     </div>
     <div id="report"><div class="loading"><div class="spin"></div>กำลังโหลด...</div></div>
+    <div id="costPanel"></div>
+  </div>
+</div>
+
+<!-- GOALS VIEW -->
+<div class="view" id="view-goals">
+  <div class="wrap">
+    <div id="goalsBox"><div class="loading"><div class="spin"></div>กำลังโหลด...</div></div>
+  </div>
+</div>
+
+<!-- SETTINGS VIEW -->
+<div class="view" id="view-settings">
+  <div class="wrap">
+    <div id="settingsBox"><div class="loading"><div class="spin"></div>กำลังโหลด...</div></div>
   </div>
 </div>
 
@@ -217,12 +265,14 @@ async function api(path, opts={}){
 }
 
 /* ---------- tabs ---------- */
+let costLoaded=false;
 function switchTab(name){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
-  $('view-menu').classList.toggle('active',name==='menu');
-  $('view-report').classList.toggle('active',name==='report');
+  ['menu','report','goals','settings'].forEach(v=>$('view-'+v).classList.toggle('active',name===v));
   $('addBtn').classList.toggle('hide',name!=='menu');
-  if(name==='report' && !curMonth){ curMonth=thisMonth(); loadReport(); }
+  if(name==='report'){ if(!curMonth){curMonth=thisMonth();} loadReport(); if(!costLoaded){loadCostCompare();costLoaded=true;} }
+  if(name==='goals'){ loadGoals(); }
+  if(name==='settings'){ loadSettings(); }
 }
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>switchTab(t.dataset.tab)));
 
@@ -347,6 +397,87 @@ $('addBtn').addEventListener('click',openAdd);
 $('saveBtn').addEventListener('click',saveMenu);
 $('cancelBtn').addEventListener('click',closeSheet);
 $('sheetBg').addEventListener('click',closeSheet);
+
+/* ---------- goals tab ---------- */
+function goalBlock(label,period,current,goal){
+  const pct=goal>0?Math.min(100,current/goal*100):0;
+  const done=goal>0&&current>=goal;
+  return `<div class="goalcard">
+    <div class="gh">${label}</div>
+    <div class="grow"><div class="gnow">${baht(current)} ฿</div><div class="gtarget">${goal?('เป้า '+baht(goal)+' ฿'):'ยังไม่ตั้งเป้า'}</div></div>
+    ${goal?`<div class="pbar"><div class="pfill ${done?'done':''}" style="width:${pct}%"></div></div>
+      <div class="ghint ${done?'done':''}">${done?('🎉 ถึงเป้าแล้ว ('+Math.round(pct)+'%)'):('อีก '+baht(Math.max(0,goal-current))+' ฿ ถึงเป้า ('+Math.round(pct)+'%)')}</div>`:''}
+    <div class="goalform">
+      <input type="number" inputmode="decimal" id="gi_${period}" placeholder="${goal?baht(goal):'ตั้งเป้า (฿)'}" />
+      <button onclick="saveGoal('${period}')">${goal?'แก้ไข':'ตั้งเป้า'}</button>
+      ${goal?`<button onclick="saveGoal('${period}',true)" style="background:#eef3fc;color:var(--ink-soft)">ลบ</button>`:''}
+    </div></div>`;
+}
+async function loadGoals(){
+  $('goalsBox').innerHTML='<div class="loading"><div class="spin"></div>กำลังโหลด...</div>';
+  try{
+    const d=await api('/api/goals');
+    $('goalsBox').innerHTML=goalBlock('ยอดขายวันนี้','daily',d.todayIncome,d.daily||0)
+      +goalBlock('ยอดขายเดือนนี้','monthly',d.monthIncome,d.monthly||0);
+  }catch(e){$('goalsBox').innerHTML='<div class="empty"><p>โหลดไม่สำเร็จ</p></div>';}
+}
+window.saveGoal=async function(period,del){
+  let val=null;
+  if(!del){const v=$('gi_'+period).value;if(!v||+v<=0){toast('ใส่ตัวเลขเป้าก่อน');return;}val=Math.round(+v);}
+  try{await api('/api/goals',{method:'POST',body:JSON.stringify({[period]:val})});toast(del?'ลบเป้าแล้ว':'ตั้งเป้าแล้ว');loadGoals();}
+  catch(e){toast('บันทึกไม่สำเร็จ');}
+};
+
+/* ---------- settings tab ---------- */
+async function loadSettings(){
+  $('settingsBox').innerHTML='<div class="loading"><div class="spin"></div>กำลังโหลด...</div>';
+  try{
+    const s=await api('/api/settings');
+    $('settingsBox').innerHTML=`
+      <div class="panel"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>การแจ้งเตือน</h3>
+        <div class="setrow"><div><div class="sl">สรุปยอดรายวัน</div><div class="sd">บอทส่งสรุปยอด + กำไรให้ทุกเย็น</div></div>
+          <div class="switch ${s.dailySummary?'on':''}" id="swDaily" onclick="toggleDaily()"></div></div>
+      </div>
+      <div class="panel"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></svg>ส่งออกรายงาน Excel</h3>
+        <div class="sd" style="margin-bottom:13px">ดาวน์โหลดไฟล์ Excel รายเดือน (รายการ + สรุป + หมวดรายจ่าย) ส่งให้บัญชีหรือยื่นภาษีได้เลย</div>
+        <a class="bigbtn" href="#" onclick="return doExport(thisMonth())"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>ดาวน์โหลดเดือนนี้</a>
+        <a class="bigbtn ghost" href="#" onclick="return doExport(addMonth(thisMonth(),-1))" style="margin-top:10px">ดาวน์โหลดเดือนก่อน</a>
+      </div>`;
+  }catch(e){$('settingsBox').innerHTML='<div class="empty"><p>โหลดไม่สำเร็จ</p></div>';}
+}
+window.toggleDaily=async function(){
+  const el=$('swDaily');const next=!el.classList.contains('on');el.classList.toggle('on',next);
+  try{await api('/api/settings',{method:'POST',body:JSON.stringify({dailySummary:next})});toast(next?'เปิดแจ้งเตือนแล้ว':'ปิดแจ้งเตือนแล้ว');}
+  catch(e){el.classList.toggle('on',!next);toast('บันทึกไม่สำเร็จ');}
+};
+window.doExport=async function(ym){
+  toast('กำลังเตรียมไฟล์...');
+  try{const r=await api('/api/export-link?month='+ym);
+    if(window.liff&&liff.openWindow){liff.openWindow({url:r.url,external:true});}else{window.open(r.url,'_blank');}
+  }catch(e){toast('สร้างลิงก์ไม่สำเร็จ');}
+  return false;
+};
+
+/* ---------- cost compare (in report) ---------- */
+async function loadCostCompare(){
+  try{
+    const d=await api('/api/cost-compare');
+    if(!d.rows||!d.rows.length){$('costPanel').innerHTML='';return;}
+    const top=d.rows.filter(r=>r.status==='up'&&r.cur>=100).sort((a,b)=>b.pct-a.pct)[0];
+    const rowsHtml=d.rows.slice(0,8).map(r=>{
+      let badge,col;
+      if(r.status==='new'){badge='ใหม่';col='#f0883e';}
+      else if(r.status==='up'){badge='▲ +'+r.pct+'%';col='#e5484d';}
+      else if(r.status==='down'){badge='▼ −'+Math.abs(r.pct)+'%';col='#00a86b';}
+      else{badge='— เท่าเดิม';col='#9aa9c2';}
+      return `<div class="costrow"><div><div class="cn">${escapeHtml(r.category)}</div><div class="cs">${baht(r.cur)} ฿ · เดือนก่อน ${baht(r.prev)} ฿</div></div><div class="cbadge" style="color:${col}">${badge}</div></div>`;
+    }).join('');
+    $('costPanel').innerHTML=`<div class="panel"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>เทียบต้นทุนกับเดือนก่อน</h3>
+      <div class="cs" style="margin-bottom:10px;color:#9aa9c2">${escapeHtml(d.period)}</div>
+      ${top?`<div class="warnbox">⚠️ ${escapeHtml(top.category)} ขึ้น ${top.pct}% จากเดือนก่อน</div>`:''}
+      ${rowsHtml}</div>`;
+  }catch(e){$('costPanel').innerHTML='';}
+}
 
 /* ---------- init ---------- */
 (async()=>{

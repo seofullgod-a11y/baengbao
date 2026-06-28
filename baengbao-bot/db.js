@@ -87,6 +87,12 @@ async function getGoals(lineUserId) {
     monthly: r.goal_monthly != null ? +r.goal_monthly : null,
   };
 }
+async function getDailySummary(lineUserId) {
+  const { rows } = await pool.query(
+    `SELECT COALESCE(daily_summary, TRUE) AS on FROM users WHERE line_user_id=$1`, [lineUserId]
+  );
+  return rows[0] ? !!rows[0].on : true;
+}
 
 // ผู้ใช้ที่เปิดแจ้งเตือน และมีรายการในวันที่กำหนด
 async function activeUsersForDaily(dateStr) {
@@ -285,5 +291,5 @@ module.exports = {
   listMenus, createMenu, updateMenu, deleteMenu,
   dailySeries, categoryBreakdown, recentTxns, deleteTxn,
   bumpUsage, setDailySummary, activeUsersForDaily, getState, setState,
-  setGoal, getGoals, categoryCompare, txnsForMonth,
+  setGoal, getGoals, getDailySummary, categoryCompare, txnsForMonth,
 };

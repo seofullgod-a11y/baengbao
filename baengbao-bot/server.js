@@ -495,7 +495,7 @@ async function liffAuth(req, res, next) {
   }
 }
 
-app.use(['/api/menus', '/api/stats', '/api/transactions'], express.json(), liffAuth);
+app.use(['/api/menus', '/api/stats', '/api/transactions', '/api/goals', '/api/cost-compare', '/api/settings', '/api/export-link'], express.json(), liffAuth);
 
 app.get('/api/menus', async (req, res) => {
   await db.upsertUser(req.userId, req.displayName);
@@ -543,6 +543,52 @@ app.get('/api/transactions', async (req, res) => {
 
 app.delete('/api/transactions/:id', async (req, res) => {
   res.json({ ok: await db.deleteTxn(req.userId, +req.params.id) });
+});
+
+// ---- เฟส 8: เป้ายอดขาย ----
+app.get('/api/goals', async (req, res) => {
+  await db.upsertUser(req.userId, req.displayName);
+  const today = bkkDate();
+  const [g, day, month] = await Promise.all([
+    db.getGoals(req.userId), db.dayTotals(req.userId, today), db.monthTotals(req.userId, today.slice(0, 7)),
+  ]);
+  res.json({ daily: g.daily, monthly: g.monthly, todayIncome: day.income, monthIncome: month.income });
+});
+app.post('/api/goals', async (req, res) => {
+  const b = req.body || {};
+  const patch = {};
+  if ('daily' in b) patch.daily = b.daily == null || +b.daily <= 0 ? null : Math.round(+b.daily);
+  if ('monthly' in b) patch.monthly = b.monthly == null || +b.monthly <= 0 ? null : Math.round(+b.monthly);
+  await db.setGoal(req.userId, patch);
+  res.json({ ok: true });
+});
+
+// ---- เฟส 9: เทียบต้นทุน ----
+app.get('/api/cost-compare', async (req, res) => {
+  const today = bkkDate();
+  const R = monthCompareRanges(today);
+  const cmp = await db.categoryCompare(req.userId, R.thisStart, R.thisEnd, R.prevStart, R.prevEnd);
+  const rows = cmp.filter(r => r.cur > 0 || r.prev > 0).map(r => {
+    let status = 'flat', pct = 0;
+    if (r.prev === 0 && r.cur > 0) status = 'new';
+    else if (r.prev > 0) { pct = Math.round(((r.cur - r.prev) / r.prev) * 100); status = pct >= 5 ? 'up' : (pct <= -5 ? 'down' : 'flat'); }
+    return { category: r.category, cur: r.cur, prev: r.prev, pct, status };
+  });
+  res.json({ period: R.label, rows });
+});
+
+// ---- ตั้งค่า + export ----
+app.get('/api/settings', async (req, res) => {
+  res.json({ dailySummary: await db.getDailySummary(req.userId) });
+});
+app.post('/api/settings', async (req, res) => {
+  if (typeof (req.body || {}).dailySummary === 'boolean') await db.setDailySummary(req.userId, req.body.dailySummary);
+  res.json({ ok: true });
+});
+app.get('/api/export-link', async (req, res) => {
+  if (!baseUrl()) return res.status(503).json({ error: 'ลิงก์ยังไม่พร้อม' });
+  const ym = YM_RE.test(req.query.month) ? req.query.month : bkkDate().slice(0, 7);
+  res.json({ url: `${baseUrl()}/export.xlsx?t=${signExport(req.userId, ym)}`, month: ym });
 });
 
 // ---------- เฟส 7: แจ้งเตือนสรุปรายวันอัตโนมัติ ----------
