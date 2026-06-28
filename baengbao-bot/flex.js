@@ -1,0 +1,203 @@
+// flex.js — ตัวสร้างการ์ด Flex Message ของแบ่งเบา (ดีไซน์ขาว-น้ำเงิน-เขียว)
+'use strict';
+
+const C = {
+  blue: '#1F6BFF', blueDeep: '#0B49C9', green: '#00A86B', warn: '#F0883E',
+  danger: '#E5484D', ink: '#0A1F44', soft: '#67789A', faint: '#9AA9C2',
+  line: '#E7EEFB', bgSoft: '#F4F8FF', white: '#FFFFFF', onColor: '#FFFFFFE6',
+};
+
+const baht = n => Number(n || 0).toLocaleString('th-TH');
+const scol = (txt, c, extra = {}) => ({ type: 'text', text: String(txt), color: c, ...extra });
+
+function header(title, sub, bg) {
+  return {
+    type: 'box', layout: 'vertical', backgroundColor: bg,
+    paddingAll: '16px', paddingBottom: '13px', spacing: 'xs',
+    contents: [
+      sol_icon_title(title),
+      ...(sub ? [sol(sub, C.onColor, { size: 'xs' })] : []),
+    ],
+  };
+}
+function sol(txt, c, extra = {}) { return { type: 'text', text: String(txt), color: c, ...extra }; }
+function sol_icon_title(title) {
+  return { type: 'text', text: title, color: C.white, weight: 'bold', size: 'md' };
+}
+
+// แถวสรุป: ป้ายซ้าย ค่าตัวเลขขวา
+function statRow(label, value, color, big) {
+  return {
+    type: 'box', layout: 'horizontal', contents: [
+      sol(label, C.soft, { size: 'sm', gravity: 'center', flex: 0 }),
+      sol(value, color || C.ink, { size: big ? 'lg' : 'sm', weight: 'bold', align: 'end', gravity: 'center' }),
+    ],
+  };
+}
+const sep = (m = 'md') => ({ type: 'separator', margin: m, color: C.line });
+
+function linkButton(label, url) {
+  if (!url) return null;
+  return {
+    type: 'button', style: 'primary', color: C.blue, height: 'sm',
+    action: { type: 'uri', label, uri: url },
+  };
+}
+
+function bubble({ headerBox, bodyContents, footerButton, size = 'mega' }) {
+  const b = {
+    type: 'bubble', size,
+    body: {
+      type: 'box', layout: 'vertical', paddingAll: '0px',
+      contents: [
+        headerBox,
+        { type: 'box', layout: 'vertical', paddingAll: '16px', spacing: 'sm', contents: bodyContents },
+      ],
+    },
+  };
+  if (footerButton) {
+    b.footer = {
+      type: 'box', layout: 'vertical', paddingAll: '12px', paddingTop: '0px',
+      contents: [footerButton],
+    };
+  }
+  return b;
+}
+
+// ---------- การ์ดบันทึกรายรับ/รายจ่าย ----------
+function confirmCard({ type, amount, note, menuProfitEst, day, link }) {
+  const income = type === 'income';
+  const sign = income ? '+' : '−';
+  const accent = income ? C.green : C.warn;
+  const title = income ? 'บันทึกรายรับแล้ว' : 'บันทึกรายจ่ายแล้ว';
+
+  const body = [
+    { type: 'box', layout: 'baseline', contents: [
+      sol(`${sign}${baht(amount)}`, accent, { size: '3xl', weight: 'bold', flex: 0 }),
+      sol(' ฿', accent, { size: 'lg', weight: 'bold', gravity: 'center' }),
+    ] },
+  ];
+  if (note) body.push(sol(note, C.soft, { size: 'sm', wrap: true, margin: 'xs' }));
+  if (menuProfitEst != null) {
+    body.push({
+      type: 'box', layout: 'horizontal', margin: 'md', backgroundColor: '#E3F8EF',
+      cornerRadius: '10px', paddingAll: '10px', contents: [
+        sol('💰 กำไรเมนูนี้', C.green, { size: 'sm', flex: 0, gravity: 'center' }),
+        sol(`~${baht(menuProfitEst)} ฿`, C.green, { size: 'sm', weight: 'bold', align: 'end', gravity: 'center' }),
+      ],
+    });
+  }
+  body.push(sep('lg'));
+  body.push(sol('สรุปวันนี้', C.faint, { size: 'xs', margin: 'md' }));
+  body.push(statRow('รายรับ', `${baht(day.income)} ฿`, C.green));
+  body.push(statRow('รายจ่าย', `${baht(day.expense)} ฿`, C.warn));
+  body.push(statRow('กำไรสุทธิ', `${day.profit >= 0 ? '+' : '−'}${baht(Math.abs(day.profit))} ฿`, day.profit >= 0 ? C.blue : C.danger, true));
+
+  return {
+    altText: `${title} ${sign}${baht(amount)} ฿`,
+    contents: bubble({
+      headerBox: header(title, null, accent),
+      bodyContents: body,
+      footerButton: linkButton('ดูรายงาน', link ? `${link}?tab=report` : null),
+    }),
+  };
+}
+
+// ---------- การ์ดสรุป วันนี้/เดือนนี้ ----------
+function summaryCard({ title, sub, totals, link, period }) {
+  const body = [
+    statRow('รายรับ', `${baht(totals.income)} ฿`, C.green),
+    statRow('รายจ่าย', `${baht(totals.expense)} ฿`, C.warn),
+    sep('md'),
+    { type: 'box', layout: 'horizontal', margin: 'sm', contents: [
+      sol('กำไรสุทธิ', C.ink, { size: 'md', weight: 'bold', gravity: 'center', flex: 0 }),
+      sol(`${totals.profit >= 0 ? '+' : '−'}${baht(Math.abs(totals.profit))} ฿`,
+        totals.profit >= 0 ? C.blue : C.danger, { size: 'xl', weight: 'bold', align: 'end', gravity: 'center' }),
+    ] },
+  ];
+  return {
+    altText: `${title}: กำไรสุทธิ ${totals.profit >= 0 ? '+' : '−'}${baht(Math.abs(totals.profit))} ฿`,
+    contents: bubble({
+      headerBox: header(title, sub, C.blue),
+      bodyContents: body,
+      footerButton: linkButton('ดูรายงานเต็ม', link ? `${link}?tab=report` : null),
+    }),
+  };
+}
+
+// ---------- การ์ดเดลิเวอรี่ ----------
+function deliveryCard({ platform, gross, commission, net, day, dateLabel, ordersTxt }) {
+  const body = [];
+  if (gross != null) {
+    body.push(statRow('ยอดขาย', `+${baht(gross)} ฿`, C.green));
+    if (commission && commission > 0) body.push(statRow('ค่า GP', `−${baht(commission)} ฿`, C.warn));
+    body.push(sep('sm'));
+    body.push(statRow('สุทธิ', `${baht(net)} ฿`, C.blue, true));
+  } else {
+    body.push(statRow('รายรับสุทธิ', `+${baht(net)} ฿`, C.green, true));
+  }
+  if (ordersTxt) body.push(sol(ordersTxt, C.faint, { size: 'xs', margin: 'sm' }));
+  body.push(sep('lg'));
+  body.push(sol(`สรุปวันที่ ${dateLabel}`, C.faint, { size: 'xs', margin: 'md' }));
+  body.push(statRow('รายรับ', `${baht(day.income)} ฿`, C.green));
+  body.push(statRow('รายจ่าย', `${baht(day.expense)} ฿`, C.warn));
+  body.push(statRow('กำไรสุทธิ', `${day.profit >= 0 ? '+' : '−'}${baht(Math.abs(day.profit))} ฿`, day.profit >= 0 ? C.blue : C.danger, true));
+
+  return {
+    altText: `บันทึกยอด ${platform} แล้ว`,
+    contents: bubble({
+      headerBox: header(`ยอด ${platform}`, 'บันทึกจากหน้าสรุปเดลิเวอรี่', C.green),
+      bodyContents: body,
+    }),
+  };
+}
+
+// ---------- การ์ดกำไรต่อจาน (ลิสต์เมนู) ----------
+function menuProfitCard(rows, link) {
+  const body = [];
+  rows.forEach((r, i) => {
+    if (i > 0) body.push(sep('sm'));
+    body.push({
+      type: 'box', layout: 'horizontal', contents: [
+        { type: 'box', layout: 'vertical', flex: 1, contents: [
+          sol(r.name, C.ink, { size: 'sm', weight: 'bold', wrap: true }),
+          sol(`มาร์จิน ${r.margin}%`, C.faint, { size: 'xxs', margin: 'xs' }),
+        ] },
+        sol(`${r.profit < 0 ? '−' : ''}${baht(Math.abs(r.profit))} ฿`,
+          r.profit < 0 ? C.danger : C.green, { size: 'md', weight: 'bold', align: 'end', gravity: 'center', flex: 0 }),
+      ],
+    });
+  });
+  return {
+    altText: 'กำไรต่อจานของเมนู',
+    contents: bubble({
+      headerBox: header('กำไรต่อจาน', `${rows.length} เมนู`, C.blue),
+      bodyContents: body,
+      footerButton: linkButton('จัดการเมนู', link),
+    }),
+  };
+}
+
+// ---------- การ์ดเปิดเมนู / ลิงก์ LIFF ----------
+function menuLinkCard({ link, menus }) {
+  const body = [
+    sol('ตั้งเมนู ราคา และต้นทุน เพื่อดูกำไรต่อจานแบบเรียลไทม์', C.soft, { size: 'sm', wrap: true }),
+  ];
+  if (menus && menus.length) {
+    body.push(sep('lg'));
+    body.push(sol('เมนูตอนนี้', C.faint, { size: 'xs', margin: 'sm' }));
+    menus.slice(0, 5).forEach(m => body.push(statRow(m.name, `${baht(m.profit)} ฿`, C.green)));
+  }
+  return {
+    altText: 'จัดการเมนู + ดูกำไรต่อจาน',
+    contents: bubble({
+      headerBox: header('เมนูของร้าน', null, C.blue),
+      bodyContents: body,
+      footerButton: linkButton('จัดการเมนู', link),
+    }),
+  };
+}
+
+module.exports = {
+  confirmCard, summaryCard, deliveryCard, menuProfitCard, menuLinkCard,
+};

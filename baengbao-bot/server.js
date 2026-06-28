@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const path = require('path');
 const db = require('./db');
 const ai = require('./ai');
+const flex = require('./flex');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -38,6 +39,7 @@ async function lineReply(replyToken, messages) {
   if (!res.ok) console.error('[line] reply failed', res.status, await res.text());
 }
 const replyText = (token, text) => lineReply(token, [{ type: 'text', text }]);
+const replyFlex = (token, altText, contents) => lineReply(token, [{ type: 'flex', altText, contents }]);
 
 async function getImageBase64(messageId) {
   const res = await fetch(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
@@ -81,11 +83,8 @@ async function confirmAndSummary(userId, parsed, source) {
     txnDate: date,
   });
   const day = await db.dayTotals(userId, date);
-  const sign = parsed.type === 'income' ? '+' : '−';
-  let head = `✅ บันทึกแล้ว\n${parsed.type === 'income' ? 'รายรับ' : 'รายจ่าย'} ${sign}${baht(parsed.amount)} ฿` +
-    (parsed.note ? ` (${parsed.note})` : '');
 
-  // ถ้าเป็นการขายและตรงกับเมนูที่ตั้งไว้ → โชว์กำไรโดยประมาณ
+  let menuProfitEst = null;
   if (parsed.type === 'income' && parsed.items && parsed.items.length) {
     try {
       const menus = await db.listMenus(userId);
@@ -93,15 +92,19 @@ async function confirmAndSummary(userId, parsed, source) {
         const it = parsed.items[0];
         const m = matchMenu(menus, it.name);
         const qty = Number(it.qty) || null;
-        if (m && qty) {
-          const est = parsed.amount - (m.material_cost + m.labor_cost) * qty;
-          head += `\n💰 กำไรเมนูนี้ ~${baht(est)} ฿`;
-        }
+        if (m && qty) menuProfitEst = parsed.amount - (m.material_cost + m.labor_cost) * qty;
       }
     } catch (e) { console.error('[menuProfit]', e.message); }
   }
 
-  return `${head}\n━━━━━━━\nวันนี้: ${summaryLine(day)}`;
+  return flex.confirmCard({
+    type: parsed.type,
+    amount: parsed.amount,
+    note: parsed.note,
+    menuProfitEst,
+    day,
+    link: liffUrl(),
+  });
 }
 
 // บันทึกยอดจากหน้าสรุปเดลิเวอรี่ (Grab/LineMan/Shopee)
@@ -111,9 +114,11 @@ async function recordDelivery(userId, p) {
   const ordersTxt = p.orders ? `${p.orders} ออเดอร์` : '';
   let gross = p.gross_sales, commission = p.commission, net = p.net_payout;
 
+  const dateLabel = `${date.slice(8)}/${date.slice(5, 7)}`;
+
   // ไม่มียอดเลย จับไม่ได้
   if (gross == null && net == null) {
-    return `อ่านหน้าสรุป ${platform} แล้วแต่จับยอดไม่ชัดครับ ลองแคปให้เห็นยอดขายรวม/ยอดโอนชัด ๆ หรือพิมพ์ยอดมาก็ได้`;
+    return { text: `อ่านหน้าสรุป ${platform} แล้วแต่จับยอดไม่ชัดครับ ลองแคปให้เห็นยอดขายรวม/ยอดโอนชัด ๆ หรือพิมพ์ยอดมาก็ได้` };
   }
 
   // ถ้าไม่มียอดรวม ใช้ยอดสุทธิเป็นรายรับ (ถือว่า GP หักไปแล้ว)
@@ -124,7 +129,7 @@ async function recordDelivery(userId, p) {
       items: null, source: 'image', txnDate: date,
     });
     const day = await db.dayTotals(userId, date);
-    return `✅ บันทึกยอด ${platform} แล้ว\nรายรับสุทธิ +${baht(net)} ฿${ordersTxt ? ` (${ordersTxt})` : ''}\n━━━━━━━\nวันที่ ${date.slice(8)}/${date.slice(5, 7)}: ${summaryLine(day)}`;
+    return flex.deliveryCard({ platform, gross: null, commission: null, net, day, dateLabel, ordersTxt });
   }
 
   // มียอดขายรวม → ลงรายรับ = ยอดรวม, รายจ่าย = ค่า GP
@@ -142,11 +147,7 @@ async function recordDelivery(userId, p) {
   }
   const netShown = net != null ? net : gross - (commission || 0);
   const day = await db.dayTotals(userId, date);
-  let msg = `✅ บันทึกยอด ${platform} แล้ว\nยอดขาย +${baht(gross)} ฿${ordersTxt ? ` (${ordersTxt})` : ''}`;
-  if (commission && commission > 0) msg += `\nค่า GP −${baht(commission)} ฿`;
-  msg += `\nสุทธิ ${baht(netShown)} ฿`;
-  msg += `\n━━━━━━━\nวันที่ ${date.slice(8)}/${date.slice(5, 7)}: ${summaryLine(day)}`;
-  return msg;
+  return flex.deliveryCard({ platform, gross, commission, net: netShown, day, dateLabel, ordersTxt });
 }
 
 const HELP =
@@ -188,12 +189,14 @@ async function handleEvent(ev) {
 
       if (['สรุป', 'วันนี้', 'ยอดวันนี้'].some(k => raw.includes(k))) {
         const day = await db.dayTotals(userId, bkkDate());
-        return replyText(ev.replyToken, `📊 สรุปวันนี้ (${day.count} รายการ)\n${summaryLine(day)}`);
+        const c = flex.summaryCard({ title: 'สรุปวันนี้', sub: `${day.count} รายการ`, totals: day, link: liffUrl() });
+        return replyFlex(ev.replyToken, c.altText, c.contents);
       }
       if (['เดือนนี้', 'สรุปเดือน', 'ยอดเดือน'].some(k => raw.includes(k))) {
         const ym = bkkDate().slice(0, 7);
         const m = await db.monthTotals(userId, ym);
-        return replyText(ev.replyToken, `📅 สรุปเดือนนี้ (${m.count} รายการ)\n${summaryLine(m)}`);
+        const c = flex.summaryCard({ title: 'สรุปเดือนนี้', sub: `${m.count} รายการ`, totals: m, link: liffUrl() });
+        return replyFlex(ev.replyToken, c.altText, c.contents);
       }
       if (['กำไรเมนู', 'กำไรต่อจาน'].some(k => raw.includes(k))) {
         const menus = await db.listMenus(userId);
@@ -201,30 +204,29 @@ async function handleEvent(ev) {
           const u = liffUrl();
           return replyText(ev.replyToken, 'ยังไม่มีเมนูเลยครับ ตั้งเมนูแรกได้ที่นี่' + (u ? `\n${u}` : ' (พิมพ์ "เมนู")'));
         }
-        const lines = menus
+        const rows = menus
           .slice()
           .sort((a, b) => menuProfit(b) - menuProfit(a))
-          .map(m => `• ${m.name}: กำไร ${baht(menuProfit(m))} ฿/จาน (มาร์จิน ${menuMargin(m).toFixed(0)}%)`);
-        return replyText(ev.replyToken, `🍳 กำไรต่อจาน\n${lines.join('\n')}`);
+          .slice(0, 10)
+          .map(m => ({ name: m.name, profit: menuProfit(m), margin: menuMargin(m).toFixed(0) }));
+        const c = flex.menuProfitCard(rows, liffUrl());
+        return replyFlex(ev.replyToken, c.altText, c.contents);
       }
       if (raw.includes('เมนู')) {
         const u = liffUrl();
+        if (!u) return replyText(ev.replyToken, 'ยังไม่ได้ตั้งค่า LIFF (ตั้ง LIFF_ID ใน env ก่อนครับ)');
         const menus = await db.listMenus(userId);
-        let msg = u ? `จัดการเมนู + ดูกำไรต่อจานที่นี่ครับ 👇\n${u}` : 'ยังไม่ได้ตั้งค่า LIFF (ตั้ง LIFF_ID ใน env ก่อนครับ)';
-        if (menus.length) {
-          const top = menus.slice(0, 5).map(m => `• ${m.name}: ${baht(menuProfit(m))} ฿/จาน`).join('\n');
-          msg += `\n━━━━━━━\nเมนูตอนนี้:\n${top}`;
-        }
-        return replyText(ev.replyToken, msg);
+        const c = flex.menuLinkCard({
+          link: u,
+          menus: menus.map(m => ({ name: m.name, profit: menuProfit(m) })),
+        });
+        return replyFlex(ev.replyToken, c.altText, c.contents);
       }
       if (['รายงาน', 'แดชบอร์ด', 'กราฟ', 'dashboard'].some(k => t.includes(k))) {
-        const u = liffUrl();
         const ym = bkkDate().slice(0, 7);
         const m = await db.monthTotals(userId, ym);
-        const link = u ? `${u}?tab=report` : null;
-        return replyText(ev.replyToken,
-          `📊 รายงานเดือนนี้ (${m.count} รายการ)\n${summaryLine(m)}` +
-          (link ? `\n━━━━━━━\nดูกราฟเต็ม ๆ ที่นี่ 👇\n${link}` : ''));
+        const c = flex.summaryCard({ title: 'รายงานเดือนนี้', sub: `${m.count} รายการ • ดูกราฟเต็มได้ในแดชบอร์ด`, totals: m, link: liffUrl() });
+        return replyFlex(ev.replyToken, c.altText, c.contents);
       }
 
       if (await overQuota(userId)) return replyText(ev.replyToken, QUOTA_MSG);
@@ -233,7 +235,8 @@ async function handleEvent(ev) {
         return replyText(ev.replyToken, parsed.reply_hint || HELP);
       if (parsed.amount == null)
         return replyText(ev.replyToken, 'รับทราบว่าเป็นรายการ แต่ยังไม่เห็นยอดเงินเลยครับ ลองพิมพ์ยอดมาด้วยนะ เช่น "ซื้อหมู 800"');
-      return replyText(ev.replyToken, await confirmAndSummary(userId, parsed, 'text'));
+      const card = await confirmAndSummary(userId, parsed, 'text');
+      return replyFlex(ev.replyToken, card.altText, card.contents);
     } catch (e) {
       console.error('[text]', e.message);
       return replyText(ev.replyToken, 'ขอโทษครับ ตอนนี้ประมวลผลไม่ได้ ลองพิมพ์ใหม่อีกครั้งนะ');
@@ -248,12 +251,16 @@ async function handleEvent(ev) {
       const parsed = await ai.parseImage(base64, mediaType);
 
       if (parsed.doc_type === 'delivery_summary') {
-        return replyText(ev.replyToken, await recordDelivery(userId, parsed));
+        const dcard = await recordDelivery(userId, parsed);
+        return dcard.contents
+          ? replyFlex(ev.replyToken, dcard.altText, dcard.contents)
+          : replyText(ev.replyToken, dcard.text);
       }
       // bill ปกติ
       if (!parsed.is_transaction || parsed.amount == null)
         return replyText(ev.replyToken, 'อ่านรูปแล้วแต่จับยอดไม่ชัดครับ ลองถ่ายให้เห็นยอดรวมชัดๆ หรือพิมพ์ยอดมาก็ได้');
-      return replyText(ev.replyToken, await confirmAndSummary(userId, parsed, 'image'));
+      const bcard = await confirmAndSummary(userId, parsed, 'image');
+      return replyFlex(ev.replyToken, bcard.altText, bcard.contents);
     } catch (e) {
       console.error('[parseImage]', e.message);
       return replyText(ev.replyToken, 'ขอโทษครับ อ่านรูปไม่สำเร็จ ลองส่งใหม่อีกครั้งนะ');
