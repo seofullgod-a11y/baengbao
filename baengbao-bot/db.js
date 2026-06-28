@@ -52,7 +52,63 @@ async function init() {
       PRIMARY KEY (line_user_id, usage_date)
     );
   `);
+  // เฟส 7: ตั้งค่าแจ้งเตือนรายวัน + เก็บสถานะระบบ
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_summary BOOLEAN DEFAULT TRUE;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS goal_daily NUMERIC(12,2);`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS goal_monthly NUMERIC(12,2);`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS bot_state (
+      k TEXT PRIMARY KEY,
+      v TEXT
+    );
+  `);
   console.log('[db] schema ready');
+}
+
+async function setDailySummary(lineUserId, on) {
+  await pool.query(`UPDATE users SET daily_summary=$2 WHERE line_user_id=$1`, [lineUserId, !!on]);
+}
+
+// เฟส 8: เป้ายอดขาย
+async function setGoal(lineUserId, { daily, monthly }) {
+  const sets = [], vals = [lineUserId];
+  if (daily !== undefined) { vals.push(daily); sets.push(`goal_daily=$${vals.length}`); }
+  if (monthly !== undefined) { vals.push(monthly); sets.push(`goal_monthly=$${vals.length}`); }
+  if (!sets.length) return;
+  await pool.query(`UPDATE users SET ${sets.join(', ')} WHERE line_user_id=$1`, vals);
+}
+async function getGoals(lineUserId) {
+  const { rows } = await pool.query(
+    `SELECT goal_daily, goal_monthly FROM users WHERE line_user_id=$1`, [lineUserId]
+  );
+  const r = rows[0] || {};
+  return {
+    daily: r.goal_daily != null ? +r.goal_daily : null,
+    monthly: r.goal_monthly != null ? +r.goal_monthly : null,
+  };
+}
+
+// ผู้ใช้ที่เปิดแจ้งเตือน และมีรายการในวันที่กำหนด
+async function activeUsersForDaily(dateStr) {
+  const { rows } = await pool.query(
+    `SELECT DISTINCT t.line_user_id
+       FROM transactions t
+       JOIN users u ON u.line_user_id = t.line_user_id
+      WHERE t.txn_date = $1 AND COALESCE(u.daily_summary, TRUE) = TRUE`,
+    [dateStr]
+  );
+  return rows.map(r => r.line_user_id);
+}
+
+async function getState(k) {
+  const { rows } = await pool.query(`SELECT v FROM bot_state WHERE k=$1`, [k]);
+  return rows[0] ? rows[0].v : null;
+}
+async function setState(k, v) {
+  await pool.query(
+    `INSERT INTO bot_state (k, v) VALUES ($1, $2)
+     ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v`, [k, v]
+  );
 }
 
 async function upsertUser(lineUserId, displayName) {
@@ -159,6 +215,26 @@ async function categoryBreakdown(lineUserId, ym, type = 'expense') {
   return rows.map(r => ({ category: r.category, amount: +r.amount }));
 }
 
+// เฟส 9: เทียบรายจ่ายต่อหมวด ช่วงเดือนนี้ vs เดือนก่อน (ช่วงวันเท่ากัน)
+async function categoryCompare(lineUserId, thisStart, thisEnd, prevStart, prevEnd) {
+  const { rows } = await pool.query(
+    `WITH cur AS (
+       SELECT COALESCE(NULLIF(category,''),'อื่นๆ') cat, SUM(amount) amt
+       FROM transactions WHERE line_user_id=$1 AND type='expense' AND txn_date BETWEEN $2 AND $3 GROUP BY 1
+     ), prev AS (
+       SELECT COALESCE(NULLIF(category,''),'อื่นๆ') cat, SUM(amount) amt
+       FROM transactions WHERE line_user_id=$1 AND type='expense' AND txn_date BETWEEN $4 AND $5 GROUP BY 1
+     )
+     SELECT COALESCE(cur.cat, prev.cat) AS category,
+            COALESCE(cur.amt, 0) AS cur,
+            COALESCE(prev.amt, 0) AS prev
+     FROM cur FULL OUTER JOIN prev ON cur.cat = prev.cat
+     ORDER BY cur DESC`,
+    [lineUserId, thisStart, thisEnd, prevStart, prevEnd]
+  );
+  return rows.map(r => ({ category: r.category, cur: +r.cur, prev: +r.prev }));
+}
+
 async function recentTxns(lineUserId, limit = 20) {
   const { rows } = await pool.query(
     `SELECT id, type, amount, category, note, txn_date::text AS d, created_at
@@ -193,5 +269,6 @@ module.exports = {
   pool, init, upsertUser, insertTxn, dayTotals, monthTotals,
   listMenus, createMenu, updateMenu, deleteMenu,
   dailySeries, categoryBreakdown, recentTxns, deleteTxn,
-  bumpUsage,
+  bumpUsage, setDailySummary, activeUsersForDaily, getState, setState,
+  setGoal, getGoals, categoryCompare,
 };

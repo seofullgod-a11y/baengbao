@@ -198,6 +198,150 @@ function menuLinkCard({ link, menus }) {
   };
 }
 
+// ---------- การ์ดแจ้งเตือนสรุปรายวัน (push ตอนเย็น) ----------
+function dailyPushCard({ dateLabel, today, yest, link }) {
+  const diff = today.profit - (yest ? yest.profit : 0);
+  const up = diff >= 0;
+  const cmp = yest
+    ? `${up ? '▲' : '▼'} ${up ? '+' : '−'}${baht(Math.abs(diff))} ฿ จากเมื่อวาน`
+    : 'วันแรกที่จด สู้ ๆ นะครับ';
+
+  const body = [
+    statRow('รายรับ', `${baht(today.income)} ฿`, C.green),
+    statRow('รายจ่าย', `${baht(today.expense)} ฿`, C.warn),
+    sep('md'),
+    { type: 'box', layout: 'horizontal', margin: 'sm', contents: [
+      sol('กำไรสุทธิ', C.ink, { size: 'md', weight: 'bold', gravity: 'center', flex: 0 }),
+      sol(`${today.profit >= 0 ? '+' : '−'}${baht(Math.abs(today.profit))} ฿`,
+        today.profit >= 0 ? C.blue : C.danger, { size: 'xl', weight: 'bold', align: 'end', gravity: 'center' }),
+    ] },
+    { type: 'box', layout: 'vertical', margin: 'md', backgroundColor: up ? '#E3F8EF' : '#FDEBE8',
+      cornerRadius: '10px', paddingAll: '10px', contents: [
+        sol(cmp, up ? C.green : C.danger, { size: 'sm', weight: 'bold', align: 'center' }),
+      ] },
+    sol(`${today.count} รายการวันนี้`, C.faint, { size: 'xxs', align: 'center', margin: 'sm' }),
+  ];
+  return {
+    altText: `สรุปวันนี้: กำไรสุทธิ ${today.profit >= 0 ? '+' : '−'}${baht(Math.abs(today.profit))} ฿`,
+    contents: bubble({
+      headerBox: header('สรุปยอดวันนี้', dateLabel, C.blueDeep),
+      bodyContents: body,
+      footerButton: linkButton('ดูรายงานเต็ม', link ? `${link}?tab=report` : null),
+    }),
+  };
+}
+
+// ---------- เฟส 8: เป้ายอดขาย ----------
+function progressBar(pct, color) {
+  const w = Math.max(2, Math.min(100, Math.round(pct)));
+  return {
+    type: 'box', layout: 'vertical', height: '10px', backgroundColor: '#EDF2FB',
+    cornerRadius: '6px', margin: 'sm', contents: [
+      { type: 'box', layout: 'vertical', width: `${w}%`, backgroundColor: color, cornerRadius: '6px', contents: [{ type: 'filler' }] },
+    ],
+  };
+}
+
+function goalBlock(label, current, goal) {
+  const pct = goal > 0 ? (current / goal) * 100 : 0;
+  const done = current >= goal;
+  const color = done ? C.green : C.blue;
+  return [
+    { type: 'box', layout: 'horizontal', contents: [
+      sol(label, C.soft, { size: 'sm', flex: 0, gravity: 'center' }),
+      sol(`${baht(current)} / ${baht(goal)} ฿`, C.ink, { size: 'sm', weight: 'bold', align: 'end', gravity: 'center' }),
+    ] },
+    progressBar(pct, color),
+    sol(done ? `🎉 ถึงเป้าแล้ว! (${Math.round(pct)}%)` : `อีก ${baht(goal - current)} ฿ ถึงเป้า (${Math.round(pct)}%)`,
+      done ? C.green : C.faint, { size: 'xs', margin: 'xs' }),
+  ];
+}
+
+function goalCard({ todayIncome, dailyGoal, monthIncome, monthlyGoal, link }) {
+  const body = [];
+  if (dailyGoal) {
+    body.push(sol('เป้าวันนี้', C.faint, { size: 'xs' }));
+    body.push(...goalBlock('ยอดขายวันนี้', todayIncome, dailyGoal));
+  }
+  if (monthlyGoal) {
+    if (dailyGoal) body.push(sep('lg'));
+    body.push(sol('เป้าเดือนนี้', C.faint, { size: 'xs' }));
+    body.push(...goalBlock('ยอดขายเดือนนี้', monthIncome, monthlyGoal));
+  }
+  if (!dailyGoal && !monthlyGoal) {
+    body.push(sol('ยังไม่ได้ตั้งเป้าเลยครับ', C.ink, { size: 'sm', weight: 'bold' }));
+    body.push(sol('ตั้งเป้าได้ เช่น พิมพ์ว่า\n“เป้าวันละ 5000” หรือ “เป้าเดือนละ 120000”', C.soft, { size: 'sm', wrap: true, margin: 'sm' }));
+  }
+  return {
+    altText: 'เป้ายอดขาย',
+    contents: bubble({
+      headerBox: header('เป้ายอดขาย', null, C.blue),
+      bodyContents: body,
+      footerButton: linkButton('ดูรายงาน', link ? `${link}?tab=report` : null),
+    }),
+  };
+}
+
+// การ์ดเชียร์ตอนถึงเป้า (ส่งตามหลังการ์ดบันทึก)
+function goalReachedCard({ period, current }) {
+  const txt = period === 'month' ? 'ถึงเป้ายอดขายเดือนนี้แล้ว!' : 'ถึงเป้ายอดขายวันนี้แล้ว!';
+  return {
+    altText: '🎉 ' + txt,
+    contents: {
+      type: 'bubble', size: 'kilo',
+      body: {
+        type: 'box', layout: 'vertical', backgroundColor: C.green, paddingAll: '20px', spacing: 'sm',
+        contents: [
+          sol('🎉', '#FFFFFF', { size: 'xxl', align: 'center' }),
+          sol(txt, '#FFFFFF', { size: 'lg', weight: 'bold', align: 'center', wrap: true }),
+          sol(`ยอดขายแตะ ${baht(current)} ฿ แล้ว เก่งมากครับ`, '#FFFFFFE6', { size: 'sm', align: 'center', wrap: true }),
+        ],
+      },
+    },
+  };
+}
+
+// ---------- เฟส 9: เทียบต้นทุนเดือนนี้ vs เดือนก่อน ----------
+function costCompareCard({ rows, periodLabel, topSpike }) {
+  const body = [
+    sol(periodLabel, C.faint, { size: 'xs', wrap: true }),
+  ];
+  if (topSpike) {
+    body.push({
+      type: 'box', layout: 'vertical', margin: 'sm', backgroundColor: '#FDEBE8',
+      cornerRadius: '10px', paddingAll: '10px', contents: [
+        sol(`⚠️ ${topSpike.category} ขึ้น ${topSpike.pct}% จากเดือนก่อน`, C.danger, { size: 'sm', weight: 'bold', wrap: true }),
+      ],
+    });
+  }
+  body.push(sep('md'));
+  rows.forEach((r, i) => {
+    if (i > 0) body.push(sep('sm'));
+    let badge, bcolor;
+    if (r.status === 'new') { badge = 'ใหม่'; bcolor = C.warn; }
+    else if (r.status === 'up') { badge = `▲ +${r.pct}%`; bcolor = C.danger; }
+    else if (r.status === 'down') { badge = `▼ −${Math.abs(r.pct)}%`; bcolor = C.green; }
+    else { badge = '— เท่าเดิม'; bcolor = C.faint; }
+    body.push({
+      type: 'box', layout: 'horizontal', contents: [
+        { type: 'box', layout: 'vertical', flex: 1, contents: [
+          sol(r.category, C.ink, { size: 'sm', weight: 'bold', wrap: true }),
+          sol(`${baht(r.cur)} ฿  •  เดือนก่อน ${baht(r.prev)} ฿`, C.faint, { size: 'xxs', margin: 'xs', wrap: true }),
+        ] },
+        sol(badge, bcolor, { size: 'sm', weight: 'bold', align: 'end', gravity: 'center', flex: 0 }),
+      ],
+    });
+  });
+  return {
+    altText: 'เทียบต้นทุนเดือนนี้กับเดือนก่อน',
+    contents: bubble({
+      headerBox: header('เทียบต้นทุน', 'เดือนนี้ vs เดือนก่อน', C.blue),
+      bodyContents: body,
+    }),
+  };
+}
+
 module.exports = {
-  confirmCard, summaryCard, deliveryCard, menuProfitCard, menuLinkCard,
+  confirmCard, summaryCard, deliveryCard, menuProfitCard, menuLinkCard, dailyPushCard,
+  goalCard, goalReachedCard, costCompareCard,
 };

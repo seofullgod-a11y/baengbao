@@ -28,6 +28,35 @@ function bkkDate(d = new Date()) {
     timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit',
   }).format(d);
 }
+function bkkHour(d = new Date()) {
+  return +new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', hour: '2-digit', hour12: false }).format(d);
+}
+function bkkYesterday() {
+  const d = new Date(Date.now() - 24 * 3600 * 1000);
+  return bkkDate(d);
+}
+const TH_MON = ['', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+function monthCompareRanges(today) {
+  const ym = today.slice(0, 7), day = +today.slice(8, 10);
+  const [y, m] = ym.split('-').map(Number);
+  let py = y, pm = m - 1; if (pm < 1) { pm = 12; py--; }
+  const pym = `${py}-${String(pm).padStart(2, '0')}`;
+  const prevLast = new Date(py, pm, 0).getDate();
+  const pday = Math.min(day, prevLast);
+  return {
+    thisStart: `${ym}-01`, thisEnd: today,
+    prevStart: `${pym}-01`, prevEnd: `${pym}-${String(pday).padStart(2, '0')}`,
+    label: `เทียบ 1–${day} ${TH_MON[m]} กับ 1–${pday} ${TH_MON[pm]}`,
+  };
+}
+async function linePush(to, messages) {
+  const res = await fetch('https://api.line.me/v2/bot/message/push', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${CHANNEL_TOKEN}` },
+    body: JSON.stringify({ to, messages }),
+  });
+  if (!res.ok) throw new Error('push ' + res.status + ' ' + (await res.text()).slice(0, 120));
+}
 const baht = n => Number(n).toLocaleString('th-TH');
 
 async function lineReply(replyToken, messages) {
@@ -97,7 +126,7 @@ async function confirmAndSummary(userId, parsed, source) {
     } catch (e) { console.error('[menuProfit]', e.message); }
   }
 
-  return flex.confirmCard({
+  const card = flex.confirmCard({
     type: parsed.type,
     amount: parsed.amount,
     note: parsed.note,
@@ -105,6 +134,31 @@ async function confirmAndSummary(userId, parsed, source) {
     day,
     link: liffUrl(),
   });
+  const messages = [{ type: 'flex', altText: card.altText, contents: card.contents }];
+
+  // เฟส 8: เชียร์เมื่อยอดขายเพิ่งแตะเป้า
+  if (parsed.type === 'income') {
+    try {
+      const goals = await db.getGoals(userId);
+      if (goals.daily) {
+        const before = day.income - parsed.amount;
+        if (before < goals.daily && day.income >= goals.daily) {
+          const g = flex.goalReachedCard({ period: 'day', current: day.income });
+          messages.push({ type: 'flex', altText: g.altText, contents: g.contents });
+        }
+      }
+      if (goals.monthly) {
+        const month = await db.monthTotals(userId, date.slice(0, 7));
+        const before = month.income - parsed.amount;
+        if (before < goals.monthly && month.income >= goals.monthly) {
+          const g = flex.goalReachedCard({ period: 'month', current: month.income });
+          messages.push({ type: 'flex', altText: g.altText, contents: g.contents });
+        }
+      }
+    } catch (e) { console.error('[goal]', e.message); }
+  }
+
+  return { messages };
 }
 
 // บันทึกยอดจากหน้าสรุปเดลิเวอรี่ (Grab/LineMan/Shopee)
@@ -165,7 +219,10 @@ const HELP =
 • "เดือนนี้" — ดูยอดทั้งเดือน
 • "เมนู" — ตั้งเมนู + ดูกำไรต่อจาน
 • "กำไรเมนู" — ดูกำไรต่อจานของทุกเมนู
-• "รายงาน" — เปิดแดชบอร์ดกราฟ + แก้/ลบรายการ`;
+• "รายงาน" — เปิดแดชบอร์ดกราฟ + แก้/ลบรายการ
+• "ปิดสรุป" / "เปิดสรุป" — ปิด/เปิดแจ้งเตือนสรุปรายวัน
+• "เป้าวันละ 5000" — ตั้งเป้ายอดขาย, พิมพ์ "เป้า" เพื่อดูความคืบหน้า
+• "ต้นทุน" — เทียบรายจ่ายแต่ละหมวดกับเดือนก่อน (เตือนของขึ้นราคา)`;
 
 // ---------- event handling ----------
 async function handleEvent(ev) {
@@ -186,6 +243,44 @@ async function handleEvent(ev) {
     try {
       if (['ช่วย', 'help', 'วิธีใช้', 'เริ่ม', 'start'].some(k => t.includes(k)))
         return replyText(ev.replyToken, HELP);
+
+      if (['ปิดสรุป', 'ปิดแจ้งเตือน', 'ปิดเตือน'].some(k => raw.includes(k))) {
+        await db.setDailySummary(userId, false);
+        return replyText(ev.replyToken, 'ปิดแจ้งเตือนสรุปรายวันแล้วครับ 🔕\nพิมพ์ "เปิดสรุป" เมื่อไหร่ก็เปิดใหม่ได้');
+      }
+      if (['เปิดสรุป', 'เปิดแจ้งเตือน', 'เปิดเตือน'].some(k => raw.includes(k))) {
+        await db.setDailySummary(userId, true);
+        return replyText(ev.replyToken, `เปิดแจ้งเตือนแล้วครับ 🔔\nทุกวันประมาณ ${DAILY_SUMMARY_HOUR} โมง ผมจะสรุปยอดวันนั้นให้ (เฉพาะวันที่มีการจด)`);
+      }
+
+      if (raw.includes('เป้า')) {
+        if (['ลบเป้า', 'ยกเลิกเป้า', 'เอาเป้าออก'].some(k => raw.includes(k))) {
+          await db.setGoal(userId, { daily: null, monthly: null });
+          return replyText(ev.replyToken, 'ลบเป้ายอดขายทั้งหมดแล้วครับ');
+        }
+        const numMatch = raw.replace(/,/g, '').match(/\d+(\.\d+)?/);
+        if (numMatch) {
+          const amt = Math.round(parseFloat(numMatch[0]));
+          if (/เดือน/.test(raw)) {
+            await db.setGoal(userId, { monthly: amt });
+            return replyText(ev.replyToken, `ตั้งเป้ายอดขายเดือนละ ${baht(amt)} ฿ แล้วครับ 🎯\nพิมพ์ "เป้า" เพื่อดูความคืบหน้าได้ตลอด`);
+          }
+          await db.setGoal(userId, { daily: amt });
+          return replyText(ev.replyToken, `ตั้งเป้ายอดขายวันละ ${baht(amt)} ฿ แล้วครับ 🎯\nพิมพ์ "เป้า" เพื่อดูความคืบหน้าได้ตลอด`);
+        }
+        // ไม่มีตัวเลข → โชว์ความคืบหน้า
+        const goals = await db.getGoals(userId);
+        const today = bkkDate();
+        const [day, month] = await Promise.all([
+          db.dayTotals(userId, today),
+          db.monthTotals(userId, today.slice(0, 7)),
+        ]);
+        const c = flex.goalCard({
+          todayIncome: day.income, dailyGoal: goals.daily,
+          monthIncome: month.income, monthlyGoal: goals.monthly, link: liffUrl(),
+        });
+        return replyFlex(ev.replyToken, c.altText, c.contents);
+      }
 
       if (['สรุป', 'วันนี้', 'ยอดวันนี้'].some(k => raw.includes(k))) {
         const day = await db.dayTotals(userId, bkkDate());
@@ -228,6 +323,22 @@ async function handleEvent(ev) {
         const c = flex.summaryCard({ title: 'รายงานเดือนนี้', sub: `${m.count} รายการ • ดูกราฟเต็มได้ในแดชบอร์ด`, totals: m, link: liffUrl() });
         return replyFlex(ev.replyToken, c.altText, c.contents);
       }
+      if (['ต้นทุน', 'เทียบต้นทุน', 'เทียบรายจ่าย', 'ค่าใช้จ่ายเดือน'].some(k => raw.includes(k))) {
+        const today = bkkDate();
+        const R = monthCompareRanges(today);
+        const cmp = await db.categoryCompare(userId, R.thisStart, R.thisEnd, R.prevStart, R.prevEnd);
+        const filtered = cmp.filter(r => r.cur > 0 || r.prev > 0);
+        if (!filtered.length) return replyText(ev.replyToken, 'ยังไม่มีข้อมูลรายจ่ายให้เทียบเลยครับ ลองจดรายจ่ายสักพักแล้วกลับมาดูใหม่นะ');
+        const rows = filtered.map(r => {
+          let status = 'flat', pct = 0;
+          if (r.prev === 0 && r.cur > 0) status = 'new';
+          else if (r.prev > 0) { pct = Math.round(((r.cur - r.prev) / r.prev) * 100); status = pct >= 5 ? 'up' : (pct <= -5 ? 'down' : 'flat'); }
+          return { category: r.category, cur: r.cur, prev: r.prev, pct, status };
+        }).slice(0, 8);
+        const topSpike = rows.filter(r => r.status === 'up' && r.cur >= 100).sort((a, b) => b.pct - a.pct)[0] || null;
+        const c = flex.costCompareCard({ rows, periodLabel: R.label, topSpike });
+        return replyFlex(ev.replyToken, c.altText, c.contents);
+      }
 
       if (await overQuota(userId)) return replyText(ev.replyToken, QUOTA_MSG);
       const parsed = await ai.parseText(raw);
@@ -235,8 +346,8 @@ async function handleEvent(ev) {
         return replyText(ev.replyToken, parsed.reply_hint || HELP);
       if (parsed.amount == null)
         return replyText(ev.replyToken, 'รับทราบว่าเป็นรายการ แต่ยังไม่เห็นยอดเงินเลยครับ ลองพิมพ์ยอดมาด้วยนะ เช่น "ซื้อหมู 800"');
-      const card = await confirmAndSummary(userId, parsed, 'text');
-      return replyFlex(ev.replyToken, card.altText, card.contents);
+      const r = await confirmAndSummary(userId, parsed, 'text');
+      return lineReply(ev.replyToken, r.messages);
     } catch (e) {
       console.error('[text]', e.message);
       return replyText(ev.replyToken, 'ขอโทษครับ ตอนนี้ประมวลผลไม่ได้ ลองพิมพ์ใหม่อีกครั้งนะ');
@@ -259,8 +370,8 @@ async function handleEvent(ev) {
       // bill ปกติ
       if (!parsed.is_transaction || parsed.amount == null)
         return replyText(ev.replyToken, 'อ่านรูปแล้วแต่จับยอดไม่ชัดครับ ลองถ่ายให้เห็นยอดรวมชัดๆ หรือพิมพ์ยอดมาก็ได้');
-      const bcard = await confirmAndSummary(userId, parsed, 'image');
-      return replyFlex(ev.replyToken, bcard.altText, bcard.contents);
+      const r = await confirmAndSummary(userId, parsed, 'image');
+      return lineReply(ev.replyToken, r.messages);
     } catch (e) {
       console.error('[parseImage]', e.message);
       return replyText(ev.replyToken, 'ขอโทษครับ อ่านรูปไม่สำเร็จ ลองส่งใหม่อีกครั้งนะ');
@@ -368,6 +479,49 @@ app.delete('/api/transactions/:id', async (req, res) => {
   res.json({ ok: await db.deleteTxn(req.userId, +req.params.id) });
 });
 
+// ---------- เฟส 7: แจ้งเตือนสรุปรายวันอัตโนมัติ ----------
+const DAILY_SUMMARY_ENABLED = (process.env.DAILY_SUMMARY_ENABLED || 'true') !== 'false';
+const DAILY_SUMMARY_HOUR = Math.min(Math.max(+process.env.DAILY_SUMMARY_HOUR || 21, 0), 23);
+
+async function sendDailySummaries() {
+  const today = bkkDate();
+  const yest = bkkYesterday();
+  const link = liffUrl();
+  const users = await db.activeUsersForDaily(today);
+  let sent = 0;
+  for (const uid of users) {
+    try {
+      const [t, y] = await Promise.all([db.dayTotals(uid, today), db.dayTotals(uid, yest)]);
+      const card = flex.dailyPushCard({
+        dateLabel: `${today.slice(8)}/${today.slice(5, 7)}`,
+        today: t, yest: y.count ? y : null, link,
+      });
+      await linePush(uid, [{ type: 'flex', altText: card.altText, contents: card.contents }]);
+      sent++;
+      await new Promise(r => setTimeout(r, 120)); // กันยิงถี่เกิน
+    } catch (e) { console.error('[dailyPush]', uid.slice(0, 6), e.message); }
+  }
+  console.log(`[dailyPush] sent ${sent}/${users.length} for ${today}`);
+}
+
+async function dailySummaryTick() {
+  if (!DAILY_SUMMARY_ENABLED) return;
+  try {
+    if (bkkHour() !== DAILY_SUMMARY_HOUR) return;
+    const today = bkkDate();
+    const last = await db.getState('last_daily_push');
+    if (last === today) return;            // ส่งไปแล้ววันนี้
+    await db.setState('last_daily_push', today); // จองก่อน กันยิงซ้ำตอน restart
+    await sendDailySummaries();
+  } catch (e) { console.error('[dailyTick]', e.message); }
+}
+
 db.init()
-  .then(() => app.listen(PORT, () => console.log(`แบ่งเบา bot running on :${PORT}`)))
+  .then(() => {
+    app.listen(PORT, () => console.log(`แบ่งเบา bot running on :${PORT}`));
+    if (DAILY_SUMMARY_ENABLED) {
+      console.log(`[dailyPush] enabled, will send around ${DAILY_SUMMARY_HOUR}:00 (Asia/Bangkok)`);
+      setInterval(dailySummaryTick, 60 * 1000); // เช็กทุกนาที
+    }
+  })
   .catch(e => { console.error('[startup] db init failed', e); process.exit(1); });
