@@ -12,12 +12,14 @@ function menuDefinition() {
     name: 'baengbao-main',
     chatBarText: 'เมนูแบ่งเบา',
     areas: [
-      { bounds: { x: 0,    y: 0,   width: 833, height: 843 }, action: { type: 'message', text: 'สรุป' } },
-      { bounds: { x: 833,  y: 0,   width: 834, height: 843 }, action: { type: 'message', text: 'เป้า' } },
-      { bounds: { x: 1667, y: 0,   width: 833, height: 843 }, action: { type: 'message', text: 'เมนู' } },
-      { bounds: { x: 0,    y: 843, width: 833, height: 843 }, action: { type: 'message', text: 'รายงาน' } },
-      { bounds: { x: 833,  y: 843, width: 834, height: 843 }, action: { type: 'message', text: 'สัปดาห์' } },
-      { bounds: { x: 1667, y: 843, width: 833, height: 843 }, action: { type: 'message', text: 'ออกรายงาน' } },
+      // แถวบน (ใหญ่ ใช้ทุกวัน) สูง 1010
+      { bounds: { x: 0,    y: 0,    width: 833, height: 1010 }, action: { type: 'message', text: 'สรุป' } },
+      { bounds: { x: 833,  y: 0,    width: 834, height: 1010 }, action: { type: 'message', text: 'วิธีจด' } },
+      { bounds: { x: 1667, y: 0,    width: 833, height: 1010 }, action: { type: 'message', text: 'รายงาน' } },
+      // แถวล่าง (เสริม) สูง 676
+      { bounds: { x: 0,    y: 1010, width: 833, height: 676 },  action: { type: 'message', text: 'เป้า' } },
+      { bounds: { x: 833,  y: 1010, width: 834, height: 676 },  action: { type: 'message', text: 'เมนู' } },
+      { bounds: { x: 1667, y: 1010, width: 833, height: 676 },  action: { type: 'message', text: 'ช่วย' } },
     ],
   };
 }

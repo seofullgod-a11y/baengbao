@@ -63,9 +63,8 @@ async function init() {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS invite_code TEXT;`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite ON users (invite_code) WHERE invite_code IS NOT NULL;`);
   // เฟส 20: ระบบร้าน/พนักงาน (ใช้บัญชีข้อมูลร่วมกัน)
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS account_id TEXT;`);
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS invite_code TEXT;`);
-  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite ON users (invite_code) WHERE invite_code IS NOT NULL;`);
+  // เฟส 23: โหมดมือใหม่ (สอนทีละขั้น) — 0/NULL=ไม่อยู่ในโหมดสอน, 1..=ขั้นที่กำลังสอน
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS onboard_step INT DEFAULT 0;`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS bot_state (
       k TEXT PRIMARY KEY,
@@ -160,6 +159,15 @@ async function usageToday(lineUserId, dateStr) {
     [lineUserId, dateStr]
   );
   return rows[0] ? +rows[0].n : 0;
+}
+
+// เฟส 23: โหมดมือใหม่
+async function getOnboard(lineUserId) {
+  const { rows } = await pool.query(`SELECT COALESCE(onboard_step,0) AS s FROM users WHERE line_user_id=$1`, [lineUserId]);
+  return rows[0] ? +rows[0].s : 0;
+}
+async function setOnboard(lineUserId, step) {
+  await pool.query(`UPDATE users SET onboard_step=$2 WHERE line_user_id=$1`, [lineUserId, step]);
 }
 
 // เฟส 20: เพิ่มพนักงาน (แชร์บัญชีร้าน)
@@ -525,5 +533,6 @@ module.exports = {
   setCashFloat, getCashFloat, cashTotalsForDay, recurringMonthlyTotal, incomeSplitForMonth,
   getMembership, setMembership, usageToday, listUsersAdmin,
   accountOf, ensureInvite, findByInvite, joinShop, leaveShop, listShopMembers, countMembers,
+  getOnboard, setOnboard,
   createRecurring, listRecurring, deleteRecurring, toggleRecurring, recurringToRun, markRecurringRun,
 };

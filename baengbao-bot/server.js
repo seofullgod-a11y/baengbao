@@ -99,16 +99,32 @@ async function linePush(to, messages) {
 }
 const baht = n => Number(n).toLocaleString('th-TH');
 
-async function lineReply(replyToken, messages) {
+// ปุ่มกดลัด (Quick Reply) — ให้คนที่พิมพ์ไม่คล่อง/สูงวัย กดแทนพิมพ์ได้ทุกข้อความ
+const QR_MAIN = {
+  items: [
+    { type: 'action', action: { type: 'message', label: '📊 ยอดวันนี้', text: 'สรุป' } },
+    { type: 'action', action: { type: 'message', label: '📅 ทั้งเดือน', text: 'รายงาน' } },
+    { type: 'action', action: { type: 'message', label: '✏️ วิธีจด', text: 'วิธีจด' } },
+    { type: 'action', action: { type: 'message', label: '🎯 เป้า', text: 'เป้า' } },
+    { type: 'action', action: { type: 'message', label: '☰ ดูทั้งหมด', text: 'ช่วย' } },
+  ],
+};
+function attachQR(messages, qr) {
+  if (!qr || !Array.isArray(messages) || !messages.length) return messages;
+  const last = messages[messages.length - 1];
+  if (last && typeof last === 'object' && !last.quickReply) last.quickReply = qr;
+  return messages;
+}
+async function lineReply(replyToken, messages, qr = QR_MAIN) {
   const res = await fetch('https://api.line.me/v2/bot/message/reply', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${CHANNEL_TOKEN}` },
-    body: JSON.stringify({ replyToken, messages }),
+    body: JSON.stringify({ replyToken, messages: attachQR(messages, qr) }),
   });
   if (!res.ok) console.error('[line] reply failed', res.status, await res.text());
 }
-const replyText = (token, text) => lineReply(token, [{ type: 'text', text }]);
-const replyFlex = (token, altText, contents) => lineReply(token, [{ type: 'flex', altText, contents }]);
+const replyText = (token, text, qr = QR_MAIN) => lineReply(token, [{ type: 'text', text }], qr);
+const replyFlex = (token, altText, contents, qr = QR_MAIN) => lineReply(token, [{ type: 'flex', altText, contents }], qr);
 
 async function getImageBase64(messageId) {
   const res = await fetch(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
@@ -162,6 +178,21 @@ function matchMenu(menus, itemName) {
     const mn = norm(m.name);
     return mn && (mn.includes(n) || n.includes(mn));
   }) || null;
+}
+
+// เฟส 23: โหมดมือใหม่ — คำชม + ขั้นถัดไป (คืน null ถ้าไม่ได้อยู่ในโหมดสอน)
+async function onboardNudge(identityId) {
+  const step = await db.getOnboard(identityId);
+  if (!step) return null;
+  if (step === 1) {
+    await db.setOnboard(identityId, 2);
+    return 'เก่งมากครับ! 🎉 จดให้เรียบร้อยแล้ว\n\nลองอีกสักครั้ง — คราวนี้จด "รายจ่าย" ที่ซื้อของดูครับ\nเช่น  ซื้อหมู 800';
+  }
+  if (step === 2) {
+    await db.setOnboard(identityId, 0);
+    return 'สุดยอดเลยครับ! 🎊 คุณใช้เป็นแล้ว\n\nต่อไปก็แค่จดทุกครั้งที่ขายหรือซื้อของ เดี๋ยวผมสรุปยอด-กำไรให้เองทุกวัน\n\nอยากดูยอดเมื่อไหร่ กดปุ่ม "📊 ยอดวันนี้" ข้างล่างได้เลยครับ 😊';
+  }
+  return null;
 }
 
 async function confirmAndSummary(userId, parsed, source) {
@@ -299,10 +330,12 @@ const HELP =
 // ---------- event handling ----------
 async function handleEvent(ev) {
   if (ev.type === 'follow') {
+    const newUserId = ev.source && ev.source.userId;
+    if (newUserId) { await db.upsertUser(newUserId); await db.setOnboard(newUserId, 1); }
     const w = flex.welcomeCarousel(liffUrl());
     return lineReply(ev.replyToken, [
       { type: 'flex', altText: w.altText, contents: w.contents },
-      { type: 'text', text: 'พิมพ์ "ช่วย" เมื่อไหร่ก็ได้ เพื่อดูวิธีใช้ทั้งหมดนะครับ 🙌' },
+      { type: 'text', text: 'มาลองใช้ด้วยกันเลยครับ 😊\n\nขั้นแรก ลองพิมพ์ยอดขายล่าสุดของวันนี้มาดูครับ\nเช่น  ขายข้าว 50\n\n(พิมพ์ของจริงได้เลย เดี๋ยวผมจดให้ — หรือพิมพ์ "ข้าม" ถ้าไม่อยากให้สอน)' },
     ]);
   }
   if (ev.type !== 'message' || !ev.source || ev.source.type !== 'user') return;
@@ -319,6 +352,26 @@ async function handleEvent(ev) {
     try {
       if (['ช่วย', 'help', 'วิธีใช้', 'เริ่ม', 'start'].some(k => t.includes(k)))
         return replyText(ev.replyToken, HELP);
+
+      if (raw === 'ข้าม' || raw.includes('ข้ามการสอน') || t === 'skip') {
+        if (await db.getOnboard(identityId) > 0) {
+          await db.setOnboard(identityId, 0);
+          return replyText(ev.replyToken, 'ได้เลยครับ ข้ามการสอนแล้ว 👌\nอยากดูวิธีจดเมื่อไหร่ พิมพ์ "วิธีจด" หรือกดปุ่มข้างล่างได้ตลอดนะครับ');
+        }
+      }
+
+      if (['วิธีจด', 'จดยังไง', 'จดยังไ', 'สอนจด', 'จดอย่างไร', 'จดไง'].some(k => raw.includes(k))) {
+        return replyText(ev.replyToken,
+          'จดง่าย ๆ แบบนี้เลยครับ ✍️\n\n' +
+          '🟢 ขายของ — พิมพ์ของที่ขาย + ราคา\n' +
+          '   เช่น   ขายข้าวกะเพรา 50\n' +
+          '            ขายก๋วยเตี๋ยว 3 ชาม 150\n\n' +
+          '🟠 จ่ายเงิน — พิมพ์ของที่ซื้อ + ราคา\n' +
+          '   เช่น   ซื้อหมู 800\n' +
+          '            จ่ายค่าน้ำแข็ง 60\n\n' +
+          '📸 หรือถ่ายรูปบิล/สลิป ส่งมาได้เลย เดี๋ยวผมอ่านให้\n\n' +
+          'อยากดูยอด กดปุ่มข้างล่างได้เลยครับ 👇');
+      }
 
       // ===== เฟส 20: ระบบเพิ่มพนักงาน (แชร์บัญชีร้าน) — ใช้ identityId =====
       const isStaff = userId !== identityId; // ถ้าบัญชีข้อมูล != ตัวเอง แปลว่าเป็นพนักงาน
@@ -560,14 +613,20 @@ async function handleEvent(ev) {
       { const q = await overQuota(userId); if (q.over) return replyText(ev.replyToken, quotaMessage(q)); }
       const parsed = await ai.parseText(raw);
       if (!parsed.is_transaction)
-        return replyText(ev.replyToken, parsed.reply_hint || HELP);
+        return replyText(ev.replyToken, parsed.reply_hint ||
+          'ขอโทษครับ ผมไม่ค่อยแน่ใจว่าหมายถึงอะไร 🙏\n\n' +
+          'ถ้าจะ "จดขาย" พิมพ์ เช่น  ขายข้าว 50\n' +
+          'ถ้าจะ "จดจ่าย" พิมพ์ เช่น  ซื้อหมู 800\n' +
+          'หรือกดปุ่มข้างล่างได้เลยครับ 👇');
       if (parsed.amount == null)
-        return replyText(ev.replyToken, 'รับทราบว่าเป็นรายการ แต่ยังไม่เห็นยอดเงินเลยครับ ลองพิมพ์ยอดมาด้วยนะ เช่น "ซื้อหมู 800"');
+        return replyText(ev.replyToken, 'รับทราบว่าเป็นรายการ แต่ยังไม่เห็นยอดเงินเลยครับ 🙏\nลองพิมพ์ยอดมาด้วยนะ เช่น "ซื้อหมู 800"');
       const r = await confirmAndSummary(userId, parsed, 'text');
+      const nudge = await onboardNudge(identityId);
+      if (nudge) r.messages.push({ type: 'text', text: nudge });
       return lineReply(ev.replyToken, r.messages);
     } catch (e) {
       console.error('[text]', e.message);
-      return replyText(ev.replyToken, 'ขอโทษครับ ตอนนี้ประมวลผลไม่ได้ ลองพิมพ์ใหม่อีกครั้งนะ');
+      return replyText(ev.replyToken, 'ขอโทษครับ ตอนนี้ผมงง ๆ นิดหน่อย 🙏 ลองพิมพ์ใหม่อีกครั้ง หรือกดปุ่มข้างล่างได้เลยครับ');
     }
   }
 
@@ -588,6 +647,8 @@ async function handleEvent(ev) {
       if (!parsed.is_transaction || parsed.amount == null)
         return replyText(ev.replyToken, 'อ่านรูปแล้วแต่จับยอดไม่ชัดครับ ลองถ่ายให้เห็นยอดรวมชัดๆ หรือพิมพ์ยอดมาก็ได้');
       const r = await confirmAndSummary(userId, parsed, 'image');
+      const nudge = await onboardNudge(identityId);
+      if (nudge) r.messages.push({ type: 'text', text: nudge });
       return lineReply(ev.replyToken, r.messages);
     } catch (e) {
       console.error('[parseImage]', e.message);
