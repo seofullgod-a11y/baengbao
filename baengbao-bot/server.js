@@ -35,14 +35,27 @@ function verifyExport(token) {
   if (!userId || !ym || Date.now() > +exp) return null;
   return { userId, ym };
 }
-const DAILY_AI_LIMIT = +process.env.DAILY_AI_LIMIT || 80;
-const QUOTA_MSG = `วันนี้ใช้ผู้ช่วย AI ครบโควตาแล้วครับ (${DAILY_AI_LIMIT} ครั้ง/วัน) 🙏\nคำสั่งดูข้อมูลอย่าง "สรุป" "รายงาน" "เมนู" ยังใช้ได้ปกติ พรุ่งนี้ค่อยจดต่อได้เลย`;
-// นับการเรียก AI ต่อวัน คืน true ถ้าเกินโควตา
+const FREE_AI_LIMIT = +process.env.FREE_AI_LIMIT || +process.env.DAILY_AI_LIMIT || 30;
+const PRO_AI_LIMIT = +process.env.PRO_AI_LIMIT || 500;
+function aiLimitFor(tier) { return tier === 'pro' ? PRO_AI_LIMIT : FREE_AI_LIMIT; }
+
+// นับการเรียก AI ต่อวัน คืนสถานะโควตา (รู้ tier ด้วย)
 async function overQuota(userId) {
   try {
-    const n = await db.bumpUsage(userId, bkkDate());
-    return n > DAILY_AI_LIMIT;
-  } catch (e) { console.error('[quota]', e.message); return false; }
+    const today = bkkDate();
+    const mem = await db.getMembership(userId, today);
+    const limit = aiLimitFor(mem.effective);
+    const n = await db.bumpUsage(userId, today);
+    return { over: n > limit, tier: mem.effective, used: n, limit };
+  } catch (e) { console.error('[quota]', e.message); return { over: false }; }
+}
+function quotaMessage(q) {
+  if (q.tier === 'pro') {
+    return `วันนี้ใช้ผู้ช่วย AI ครบโควตาแล้วครับ (${q.limit} ครั้ง/วัน) 🙏\nคำสั่งดูข้อมูลอย่าง "สรุป" "รายงาน" ยังใช้ได้ พรุ่งนี้ค่อยจดต่อได้เลย`;
+  }
+  return `วันนี้ใช้ผู้ช่วย AI ครบโควตาฟรีแล้วครับ (${q.limit} ครั้ง/วัน) 🙏\n` +
+    `คำสั่งดูข้อมูลอย่าง "สรุป" "รายงาน" "เมนู" ยังใช้ได้ปกติ พรุ่งนี้รีเซ็ตใหม่\n\n` +
+    `อยากจดได้ไม่อั้นกว่านี้? พิมพ์ "สมาชิก" เพื่อดูแพ็กเกจ Pro`;
 }
 
 // ---------- helpers ----------
@@ -114,6 +127,31 @@ function summaryLine(t) {
 // กำไรต่อจานของเมนู
 const menuProfit = m => m.price - m.material_cost - m.labor_cost;
 const menuMargin = m => (m.price > 0 ? (menuProfit(m) / m.price) * 100 : 0);
+
+// เฟส 17: ประกอบงบกำไร-ขาดทุนของเดือน (ใช้ทั้งการ์ดและ Excel)
+async function buildPL(userId, ym) {
+  const [tot, split, cats, recs] = await Promise.all([
+    db.monthTotals(userId, ym),
+    db.incomeSplitForMonth(userId, ym),
+    db.categoryBreakdown(userId, ym, 'expense'),
+    db.listRecurring(userId),
+  ]);
+  const recurNames = new Set(recs.filter(r => r.active).map(r => r.name));
+  let gpFees = 0, fixed = 0, variable = 0;
+  for (const c of cats) {
+    if (/^ค่า GP/.test(c.category)) gpFees += c.amount;
+    else if (recurNames.has(c.category)) fixed += c.amount;
+    else variable += c.amount;
+  }
+  const revenue = tot.income;
+  const grossProfit = revenue - variable - gpFees;
+  const netProfit = grossProfit - fixed;
+  const marginPct = revenue > 0 ? Math.round((netProfit / revenue) * 100) : 0;
+  return {
+    revenue, storefront: split.storefront, delivery: split.delivery,
+    variable, gpFees, fixed, grossProfit, netProfit, marginPct, count: tot.count,
+  };
+}
 const norm = s => String(s || '').replace(/\s+/g, '').toLowerCase();
 
 // จับคู่ชื่อรายการที่ขาย กับเมนูที่ตั้งไว้ (match แบบ contains)
@@ -251,13 +289,20 @@ const HELP =
 • "เป้าวันละ 5000" — ตั้งเป้ายอดขาย, พิมพ์ "เป้า" เพื่อดูความคืบหน้า
 • "ต้นทุน" — เทียบรายจ่ายแต่ละหมวดกับเดือนก่อน (เตือนของขึ้นราคา)
 • "สัปดาห์" — สรุป 7 วันล่าสุด + เทียบสัปดาห์ก่อน
-• "ออกรายงาน" — ดาวน์โหลดไฟล์ Excel ส่งบัญชี/ยื่นภาษี (เพิ่ม "เดือนก่อน" ได้)`;
+• "จุดคุ้มทุน" — ต้องขายวันละเท่าไหร่ถึงไม่ขาดทุน
+• "งบ" — งบกำไร-ขาดทุนรายเดือน (รายได้ → ต้นทุน → กำไรสุทธิ)
+• "ปิดยอด 3500" — เช็กเงินสดในลิ้นชักขาด/เกิน (ตั้งเงินทอนด้วย "ตั้งเงินทอน 1000")
+• "ออกรายงาน" — ดาวน์โหลดไฟล์ Excel ส่งบัญชี/ยื่นภาษี (เพิ่ม "เดือนก่อน" ได้)
+• "สมาชิก" — ดูแพ็กเกจ + โควตา AI วันนี้`;
 
 // ---------- event handling ----------
 async function handleEvent(ev) {
   if (ev.type === 'follow') {
-    const welcome = `ขอบคุณที่เพิ่มเพื่อน "แบ่งเบา" ครับ 🙏\nผมเป็นผู้ช่วยบัญชีร้านอาหาร — จดรายรับ-รายจ่ายให้แค่พิมพ์หรือถ่ายรูป\n\nลองเลย! พิมพ์ว่า\n👉 ขายกะเพรา 5 จาน 250\n\n` + HELP;
-    return replyText(ev.replyToken, welcome);
+    const w = flex.welcomeCarousel(liffUrl());
+    return lineReply(ev.replyToken, [
+      { type: 'flex', altText: w.altText, contents: w.contents },
+      { type: 'text', text: 'พิมพ์ "ช่วย" เมื่อไหร่ก็ได้ เพื่อดูวิธีใช้ทั้งหมดนะครับ 🙌' },
+    ]);
   }
   if (ev.type !== 'message' || !ev.source || ev.source.type !== 'user') return;
 
@@ -381,6 +426,83 @@ async function handleEvent(ev) {
         return replyFlex(ev.replyToken, c.altText, c.contents);
       }
 
+      if (['จุดคุ้มทุน', 'คุ้มทุน', 'breakeven', 'break even'].some(k => raw.includes(k))) {
+        const fixedMonthly = await db.recurringMonthlyTotal(userId);
+        if (!fixedMonthly) {
+          const u = liffUrl();
+          return replyText(ev.replyToken, 'คำนวณจุดคุ้มทุนต้องรู้ "ต้นทุนคงที่" ก่อนครับ\nไปตั้งรายจ่ายประจำ (ค่าเช่า/เงินเดือน) ในแอป แท็บ "ตั้งค่า"' + (u ? `\n${u}` : '') + '\nแล้วพิมพ์ "จุดคุ้มทุน" อีกที');
+        }
+        // กำไรขั้นต้นเฉลี่ย: จากเมนูก่อน ถ้าไม่มีค่อยประเมินจากข้อมูล 30 วัน
+        const menus = await db.listMenus(userId);
+        const sumPrice = menus.reduce((s, m) => s + m.price, 0);
+        const today = bkkDate();
+        const r30 = await db.rangeTotals(userId, bkkDaysAgo(29), today);
+        let marginRatio = null;
+        if (sumPrice > 0) {
+          const sumCost = menus.reduce((s, m) => s + m.material_cost + m.labor_cost, 0);
+          marginRatio = (sumPrice - sumCost) / sumPrice;
+        } else if (r30.income > 0) {
+          const variable = Math.max(0, r30.expense - fixedMonthly);
+          marginRatio = (r30.income - variable) / r30.income;
+        }
+        if (!marginRatio || marginRatio <= 0) {
+          return replyText(ev.replyToken, 'ข้อมูลยังไม่พอคำนวณกำไรขั้นต้นครับ ลองตั้งเมนู+ราคาต้นทุน (พิมพ์ "เมนู") หรือจดรายรับ-รายจ่ายสักพักแล้วลองใหม่');
+        }
+        const beMonthly = Math.round(fixedMonthly / marginRatio);
+        const beDaily = Math.round(beMonthly / 30);
+        const avgDaily = Math.round(r30.income / 30);
+        const c = flex.breakEvenCard({
+          fixedMonthly, marginPct: Math.round(marginRatio * 100),
+          beMonthly, beDaily, avgDaily, link: liffUrl(),
+        });
+        return replyFlex(ev.replyToken, c.altText, c.contents);
+      }
+
+      if (['งบกำไรขาดทุน', 'งบกำไร', 'กำไรขาดทุน', 'งบเดือน', 'p&l', 'pl', 'งบ '].some(k => raw.includes(k)) || raw.trim() === 'งบ') {
+        const ym = bkkDate().slice(0, 7);
+        const pl = await buildPL(userId, ym);
+        if (!pl.count) return replyText(ev.replyToken, `เดือน ${xlsx.thMonthLabel(ym)} ยังไม่มีรายการให้ทำงบครับ`);
+        const c = flex.plCard({ monthLabel: xlsx.thMonthLabel(ym), pl, link: liffUrl() });
+        return replyFlex(ev.replyToken, c.altText, c.contents);
+      }
+
+      if (['สมาชิก', 'แพ็กเกจ', 'แพคเกจ', 'upgrade', 'อัปเกรด', 'โควตา'].some(k => raw.includes(k))) {
+        const today = bkkDate();
+        const mem = await db.getMembership(userId, today);
+        const used = await db.usageToday(userId, today);
+        const c = flex.membershipCard({
+          effective: mem.effective, until: mem.until, used, limit: aiLimitFor(mem.effective),
+          freeLimit: FREE_AI_LIMIT, proLimit: PRO_AI_LIMIT, contact: process.env.ADMIN_CONTACT || '@952dxvdb',
+        });
+        return replyFlex(ev.replyToken, c.altText, c.contents);
+      }
+
+      if (raw.includes('ตั้งเงินทอน') || raw.includes('เงินทอนตั้งต้น')) {
+        const m = raw.replace(/,/g, '').match(/\d+(\.\d+)?/);
+        if (!m) return replyText(ev.replyToken, 'พิมพ์ เช่น "ตั้งเงินทอน 1000" ครับ (เงินที่ใส่ลิ้นชักไว้ตอนเปิดร้าน)');
+        const amt = Math.round(parseFloat(m[0]) * 100) / 100;
+        await db.setCashFloat(userId, amt);
+        return replyText(ev.replyToken, `ตั้งเงินทอนตั้งต้น ${baht(amt)} ฿ แล้วครับ\nสิ้นวันพิมพ์ "ปิดยอด <เงินที่นับได้>" เพื่อเช็กเงินขาด-เกิน`);
+      }
+
+      if (raw.includes('ปิดยอด')) {
+        const today = bkkDate();
+        const openingFloat = await db.getCashFloat(userId);
+        const { cashIn, cashOut } = await db.cashTotalsForDay(userId, today);
+        const expected = openingFloat + cashIn - cashOut;
+        const m = raw.replace(/,/g, '').match(/\d+(\.\d+)?/);
+        if (!m) {
+          return replyText(ev.replyToken,
+            `ปิดยอดเงินสดวันนี้ 💵\nตอนนี้ในลิ้นชักควรมี ${baht(expected)} ฿\n(เงินทอนตั้งต้น ${baht(openingFloat)} + ขายสด ${baht(cashIn)} − จ่ายสด ${baht(cashOut)})\n\nนับเงินจริงแล้วพิมพ์ "ปิดยอด <จำนวน>" เพื่อเทียบครับ\nถ้าเงินทอนตั้งต้นไม่ตรง พิมพ์ "ตั้งเงินทอน <จำนวน>"`);
+        }
+        const actual = Math.round(parseFloat(m[0]) * 100) / 100;
+        const c = flex.cashCloseCard({
+          openingFloat, cashIn, cashOut, expected, actual,
+          dateLabel: `${today.slice(8)}/${today.slice(5, 7)}`,
+        });
+        return replyFlex(ev.replyToken, c.altText, c.contents);
+      }
+
       if (['ออกรายงาน', 'export', 'excel', 'ดาวน์โหลด', 'ไฟล์บัญชี', 'ส่งบัญชี', 'ยื่นภาษี'].some(k => raw.includes(k))) {
         if (!baseUrl()) return replyText(ev.replyToken, 'ยังตั้งค่าลิงก์ดาวน์โหลดไม่เสร็จครับ ลองพิมพ์อีกครั้งในอีกสักครู่');
         // เลือกเดือน: "เดือนก่อน"/"เดือนที่แล้ว" = เดือนก่อน, รูปแบบ YYYY-MM, ไม่งั้นเดือนนี้
@@ -399,7 +521,7 @@ async function handleEvent(ev) {
         return replyFlex(ev.replyToken, c.altText, c.contents);
       }
 
-      if (await overQuota(userId)) return replyText(ev.replyToken, QUOTA_MSG);
+      { const q = await overQuota(userId); if (q.over) return replyText(ev.replyToken, quotaMessage(q)); }
       const parsed = await ai.parseText(raw);
       if (!parsed.is_transaction)
         return replyText(ev.replyToken, parsed.reply_hint || HELP);
@@ -416,7 +538,7 @@ async function handleEvent(ev) {
   // ----- image (bill / delivery summary) -----
   if (ev.message.type === 'image') {
     try {
-      if (await overQuota(userId)) return replyText(ev.replyToken, QUOTA_MSG);
+      { const q = await overQuota(userId); if (q.over) return replyText(ev.replyToken, quotaMessage(q)); }
       const { base64, mediaType } = await getImageBase64(ev.message.id);
       const parsed = await ai.parseImage(base64, mediaType);
 
@@ -478,6 +600,26 @@ app.get('/admin/setup-richmenu', async (req, res) => {
   }
 });
 
+// เฟส 18: อัปเกรด/ปรับแพ็กเกจสมาชิก (แอดมินกดเอง จนกว่าจะต่อระบบจ่ายเงิน)
+app.get('/admin/set-tier', async (req, res) => {
+  const key = process.env.ADMIN_KEY;
+  if (!key) return res.status(404).send('ปิดอยู่ — ตั้ง ADMIN_KEY ก่อนครับ');
+  if (req.query.key !== key) return res.status(403).send('คีย์ไม่ถูกต้อง');
+  const u = req.query.user;
+  if (!u) return res.status(400).send('ใส่ ?user=<lineUserId> ด้วยครับ');
+  const tier = req.query.tier === 'pro' ? 'pro' : 'free';
+  let until = null;
+  if (tier === 'pro') until = bkkDaysAgo(-Math.max(1, +req.query.days || 30)); // วันในอนาคต
+  try {
+    await db.upsertUser(u, null);
+    await db.setMembership(u, tier, until);
+    res.send(`ตั้งแพ็กเกจ ${tier.toUpperCase()} ให้ ${u.slice(0, 12)}... สำเร็จ` + (until ? ` (ถึง ${until})` : ''));
+  } catch (e) {
+    console.error('[set-tier]', e.message);
+    res.status(500).send('ไม่สำเร็จ: ' + e.message);
+  }
+});
+
 // เฟส 10: ดาวน์โหลดรายงาน Excel (ตรวจโทเคนที่เซ็นไว้)
 app.get('/export.xlsx', async (req, res) => {
   try {
@@ -488,7 +630,8 @@ app.get('/export.xlsx', async (req, res) => {
       db.monthTotals(v.userId, v.ym),
       db.categoryBreakdown(v.userId, v.ym, 'expense'),
     ]);
-    const buf = await xlsx.buildMonthlyWorkbook({ ym: v.ym, rows, totals, expenseCats });
+    const pl = await buildPL(v.userId, v.ym);
+    const buf = await xlsx.buildMonthlyWorkbook({ ym: v.ym, rows, totals, expenseCats, pl });
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="baengbao-${v.ym}.xlsx"`);
     res.send(Buffer.from(buf));
@@ -620,7 +763,15 @@ app.get('/api/cost-compare', async (req, res) => {
 
 // ---- ตั้งค่า + export ----
 app.get('/api/settings', async (req, res) => {
-  res.json({ dailySummary: await db.getDailySummary(req.userId) });
+  const today = bkkDate();
+  const [dailySummary, mem, used] = await Promise.all([
+    db.getDailySummary(req.userId), db.getMembership(req.userId, today), db.usageToday(req.userId, today),
+  ]);
+  res.json({
+    dailySummary,
+    tier: mem.effective, tierUntil: mem.until,
+    aiUsed: used, aiLimit: aiLimitFor(mem.effective),
+  });
 });
 app.post('/api/settings', async (req, res) => {
   if (typeof (req.body || {}).dailySummary === 'boolean') await db.setDailySummary(req.userId, req.body.dailySummary);
@@ -657,6 +808,32 @@ app.delete('/api/recurring/:id', async (req, res) => {
 // ---------- เฟส 7: แจ้งเตือนสรุปรายวันอัตโนมัติ ----------
 const DAILY_SUMMARY_ENABLED = (process.env.DAILY_SUMMARY_ENABLED || 'true') !== 'false';
 const DAILY_SUMMARY_HOUR = Math.min(Math.max(+process.env.DAILY_SUMMARY_HOUR || 21, 0), 23);
+const FORGOT_REMIND_ENABLED = (process.env.FORGOT_REMIND_ENABLED || 'true') !== 'false';
+const REMIND_HOUR = Math.min(Math.max(+process.env.REMIND_HOUR || 20, 0), 23);
+
+async function sendJotReminders() {
+  const today = bkkDate();
+  const users = await db.usersToRemind(today, bkkDaysAgo(7), bkkYesterday());
+  let sent = 0;
+  for (const uid of users) {
+    try {
+      await linePush(uid, [{ type: 'text', text: '🌙 วันนี้ยังไม่ได้จดรายการเลยนะครับ\nถ้ามีขายหรือซื้ออะไรวันนี้ พิมพ์บอกผมได้เลย เดี๋ยวจดให้ (ไม่อยากให้ลืม 😊)\n\n(ไม่อยากรับเตือนนี้ พิมพ์ "ปิดสรุป" ได้)' }]);
+      sent++;
+      await new Promise(r => setTimeout(r, 120));
+    } catch (e) { console.error('[jotRemind]', uid.slice(0, 6), e.message); }
+  }
+  if (sent) console.log(`[jotRemind] sent ${sent}/${users.length} for ${today}`);
+}
+async function forgotJotTick() {
+  if (!FORGOT_REMIND_ENABLED) return;
+  try {
+    if (bkkHour() !== REMIND_HOUR) return;
+    const today = bkkDate();
+    if (await db.getState('last_jot_remind') === today) return;
+    await db.setState('last_jot_remind', today);
+    await sendJotReminders();
+  } catch (e) { console.error('[forgotJotTick]', e.message); }
+}
 
 async function sendDailySummaries() {
   const today = bkkDate();
@@ -724,6 +901,10 @@ db.init()
     app.listen(PORT, () => console.log(`แบ่งเบา bot running on :${PORT}`));
     recurringTick(); // เช็กรายจ่ายประจำตอนเริ่ม
     setInterval(recurringTick, 60 * 1000);
+    if (FORGOT_REMIND_ENABLED) {
+      console.log(`[jotRemind] enabled, will nudge around ${REMIND_HOUR}:00 (Asia/Bangkok)`);
+      setInterval(forgotJotTick, 60 * 1000);
+    }
     if (DAILY_SUMMARY_ENABLED) {
       console.log(`[dailyPush] enabled, will send around ${DAILY_SUMMARY_HOUR}:00 (Asia/Bangkok)`);
       setInterval(dailySummaryTick, 60 * 1000); // เช็กทุกนาที

@@ -13,7 +13,7 @@ function thMonthLabel(ym) {
 }
 
 // rows: [{date,type,amount,category,note,source}], cats: [{category,amount}] (expense)
-async function buildMonthlyWorkbook({ ym, rows, totals, expenseCats }) {
+async function buildMonthlyWorkbook({ ym, rows, totals, expenseCats, pl }) {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'แบ่งเบา';
   wb.created = new Date();
@@ -121,6 +121,36 @@ async function buildMonthlyWorkbook({ ym, rows, totals, expenseCats }) {
       row.getCell(3).value = x.amount / totalExp; row.getCell(3).numFmt = '0.0%';
       row.getCell(3).alignment = { horizontal: 'right' };
     });
+  }
+
+  // ---------- ชีตงบกำไร-ขาดทุน ----------
+  if (pl) {
+    const ps = wb.addWorksheet('งบกำไร-ขาดทุน');
+    ps.columns = [{ key: 'a', width: 32 }, { key: 'b', width: 18 }];
+    ps.mergeCells('A1:B1');
+    ps.getCell('A1').value = `งบกำไร-ขาดทุน — ${thMonthLabel(ym)}`;
+    ps.getCell('A1').font = { name: 'TH Sarabun New', size: 16, bold: true, color: { argb: INK } };
+    ps.getRow(2).height = 6;
+    const line = (label, val, opt = {}) => {
+      const row = ps.addRow([label, val]);
+      row.getCell(1).font = { bold: !!opt.bold, size: opt.big ? 13 : 11, color: { argb: opt.color || INK } };
+      const c = row.getCell(2);
+      c.numFmt = '#,##0.00';
+      c.font = { bold: !!opt.bold, size: opt.big ? 13 : 11, color: { argb: opt.vcolor || INK } };
+      c.alignment = { horizontal: 'right' };
+      if (opt.top) { row.getCell(1).border = { top: { style: 'thin', color: { argb: LINE } } }; c.border = { top: { style: 'thin', color: { argb: LINE } } }; }
+      return row;
+    };
+    line('รายได้รวม', pl.revenue, { bold: true, vcolor: GREEN });
+    line('   ขายหน้าร้าน', pl.storefront, { color: 'FF67789A', vcolor: 'FF67789A' });
+    if (pl.delivery > 0) line('   เดลิเวอรี่', pl.delivery, { color: 'FF67789A', vcolor: 'FF67789A' });
+    line('หัก ต้นทุนวัตถุดิบ/ของใช้', -pl.variable, { vcolor: ORANGE, top: true });
+    if (pl.gpFees > 0) line('หัก ค่าธรรมเนียมเดลิเวอรี่', -pl.gpFees, { vcolor: ORANGE });
+    line('กำไรขั้นต้น', pl.grossProfit, { bold: true, top: true });
+    line('หัก ค่าใช้จ่ายประจำ', -pl.fixed, { vcolor: ORANGE });
+    line('กำไรสุทธิ', pl.netProfit, { bold: true, big: true, vcolor: pl.netProfit >= 0 ? BLUE : 'FFE5484D', top: true });
+    line(`อัตรากำไรสุทธิ (${pl.marginPct}%)`, pl.revenue > 0 ? pl.netProfit / pl.revenue : 0, {})
+      .getCell(2).numFmt = '0.0%';
   }
 
   return wb.xlsx.writeBuffer(); // returns Promise<Buffer>

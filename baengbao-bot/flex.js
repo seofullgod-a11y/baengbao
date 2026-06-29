@@ -5,6 +5,7 @@ const C = {
   blue: '#1F6BFF', blueDeep: '#0B49C9', green: '#00A86B', warn: '#F0883E',
   danger: '#E5484D', ink: '#0A1F44', soft: '#67789A', faint: '#9AA9C2',
   line: '#E7EEFB', bgSoft: '#F4F8FF', white: '#FFFFFF', onColor: '#FFFFFFE6',
+  gold: '#C8920A',
 };
 
 const baht = n => Number(n || 0).toLocaleString('th-TH');
@@ -399,7 +400,205 @@ function weeklyCard({ rangeLabel, thisWeek, lastWeek, link }) {
   };
 }
 
+// ---------- เฟส 15: การ์ดต้อนรับ (onboarding) ----------
+function welcomeCarousel(link) {
+  const li = (txt) => ({
+    type: 'box', layout: 'baseline', spacing: 'sm', contents: [
+      sol('•', C.blue, { size: 'sm', flex: 0 }),
+      sol(txt, C.soft, { size: 'sm', wrap: true, flex: 1 }),
+    ],
+  });
+  const b1 = {
+    type: 'bubble', size: 'kilo',
+    body: { type: 'box', layout: 'vertical', paddingAll: '0px', contents: [
+      header('ยินดีต้อนรับ! 🙏', 'ผู้ช่วยบัญชีร้านอาหาร', C.green),
+      { type: 'box', layout: 'vertical', paddingAll: '16px', spacing: 'sm', contents: [
+        sol('ผมคือ "แบ่งเบา" ช่วยจดรายรับ-รายจ่าย ดูกำไรต่อจาน และสรุปให้อัตโนมัติ', C.ink, { size: 'sm', wrap: true }),
+        sol('แค่พิมพ์หรือถ่ายรูป ไม่ต้องลงแอปเพิ่ม ไม่ต้องตั้งค่าอะไรเลย', C.soft, { size: 'xs', wrap: true, margin: 'sm' }),
+      ] },
+    ] },
+  };
+  const b2 = {
+    type: 'bubble', size: 'kilo',
+    body: { type: 'box', layout: 'vertical', paddingAll: '0px', contents: [
+      header('เริ่มจดง่าย ๆ ✍️', 'ลองพิมพ์ดูเลย', C.blue),
+      { type: 'box', layout: 'vertical', paddingAll: '16px', spacing: 'md', contents: [
+        { type: 'box', layout: 'vertical', backgroundColor: C.bgSoft, cornerRadius: '10px', paddingAll: '12px', contents: [
+          sol('"ขายกะเพรา 5 จาน 250"', C.blueDeep, { size: 'sm', weight: 'bold', wrap: true }),
+        ] },
+        li('ถ่ายรูปบิล/ใบเสร็จ ส่งมาได้ ผมอ่านให้'),
+        li('แคปหน้าสรุปยอด Grab / LineMan / Shopee'),
+      ] },
+    ] },
+  };
+  const b3 = {
+    type: 'bubble', size: 'kilo',
+    body: { type: 'box', layout: 'vertical', paddingAll: '0px', contents: [
+      header('ทำอะไรได้อีก 🚀', 'พิมพ์คำสั่งสั้น ๆ', C.blueDeep),
+      { type: 'box', layout: 'vertical', paddingAll: '16px', spacing: 'sm', contents: [
+        li('"เป้าวันละ 5000" ตั้งเป้า + เชียร์เมื่อถึง'),
+        li('"ต้นทุน" เทียบรายจ่ายกับเดือนก่อน'),
+        li('"ออกรายงาน" ได้ไฟล์ Excel ส่งบัญชี'),
+        li('ปุ่มลัดด้านล่างกดได้เลย'),
+      ] },
+    ] },
+    footer: link ? { type: 'box', layout: 'vertical', paddingAll: '12px', paddingTop: '0px', contents: [
+      { type: 'button', style: 'primary', color: C.blue, height: 'sm', action: { type: 'uri', label: 'เปิดแอปจัดการ', uri: link } },
+    ] } : undefined,
+  };
+  return {
+    altText: 'ยินดีต้อนรับสู่แบ่งเบา 🙏 ผู้ช่วยบัญชีร้านอาหาร',
+    contents: { type: 'carousel', contents: [b1, b2, b3] },
+  };
+}
+
+// ---------- เฟส 16: จุดคุ้มทุน ----------
+function breakEvenCard({ fixedMonthly, marginPct, beMonthly, beDaily, avgDaily, link }) {
+  const above = avgDaily >= beDaily;
+  const body = [
+    statRow('ต้นทุนคงที่/เดือน', `${baht(fixedMonthly)} ฿`, C.ink),
+    statRow('กำไรขั้นต้นเฉลี่ย', `${marginPct}%`, C.green),
+    sep('md'),
+    sol('ต้องขายให้ถึง (ถึงไม่ขาดทุน)', C.faint, { size: 'xs', margin: 'sm' }),
+    { type: 'box', layout: 'horizontal', contents: [
+      sol('ต่อเดือน', C.soft, { size: 'sm', gravity: 'center', flex: 0 }),
+      sol(`${baht(beMonthly)} ฿`, C.blueDeep, { size: 'md', weight: 'bold', align: 'end', gravity: 'center' }),
+    ] },
+    { type: 'box', layout: 'horizontal', contents: [
+      sol('ต่อวัน', C.soft, { size: 'sm', gravity: 'center', flex: 0 }),
+      sol(`${baht(beDaily)} ฿`, C.blue, { size: 'xl', weight: 'bold', align: 'end', gravity: 'center' }),
+    ] },
+    { type: 'box', layout: 'vertical', margin: 'md', backgroundColor: above ? '#E3F8EF' : '#FFF3E9',
+      cornerRadius: '10px', paddingAll: '11px', contents: [
+        sol(above
+          ? `ตอนนี้ขายเฉลี่ยวันละ ${baht(avgDaily)} ฿ — เลยจุดคุ้มทุนแล้ว 👍`
+          : `ตอนนี้ขายเฉลี่ยวันละ ${baht(avgDaily)} ฿ — ยังขาดอีก ${baht(beDaily - avgDaily)} ฿/วัน`,
+          above ? C.green : C.warn, { size: 'sm', weight: 'bold', wrap: true, align: 'center' }),
+      ] },
+    sol('* ประมาณการจากต้นทุนคงที่และกำไรขั้นต้นเฉลี่ย', C.faint, { size: 'xxs', margin: 'sm', wrap: true }),
+  ];
+  return {
+    altText: `จุดคุ้มทุน ~${baht(beDaily)} ฿/วัน`,
+    contents: bubble({
+      headerBox: header('จุดคุ้มทุน', 'ต้องขายเท่าไหร่ถึงไม่ขาดทุน', C.blueDeep),
+      bodyContents: body,
+      footerButton: linkButton('ดูรายงาน', link ? `${link}?tab=report` : null),
+    }),
+  };
+}
+
+// ---------- ปิดยอดเงินสด ----------
+function cashCloseCard({ openingFloat, cashIn, cashOut, expected, actual, dateLabel }) {
+  const diff = actual - expected;
+  const exact = Math.abs(diff) < 0.5;
+  const accent = exact ? C.green : (diff > 0 ? C.blue : C.danger);
+  const statusTxt = exact ? 'พอดีเป๊ะ! 🎉' : (diff > 0 ? `เงินเกิน +${baht(diff)} ฿` : `เงินขาด −${baht(Math.abs(diff))} ฿`);
+  const body = [
+    statRow('เงินทอนตั้งต้น', `${baht(openingFloat)} ฿`, C.soft),
+    statRow('+ ขายเงินสด', `${baht(cashIn)} ฿`, C.green),
+    statRow('− จ่ายเงินสด', `${baht(cashOut)} ฿`, C.warn),
+    sep('sm'),
+    statRow('ควรมีในลิ้นชัก', `${baht(expected)} ฿`, C.ink, true),
+    statRow('นับจริง', `${baht(actual)} ฿`, C.ink, true),
+    { type: 'box', layout: 'vertical', margin: 'md', backgroundColor: exact ? '#E3F8EF' : (diff > 0 ? '#EAF1FF' : '#FDEBE8'),
+      cornerRadius: '10px', paddingAll: '12px', contents: [
+        sol(statusTxt, accent, { size: 'lg', weight: 'bold', align: 'center' }),
+      ] },
+    ...(exact ? [] : [sol('ลองเช็กว่ามีรายการที่ยังไม่ได้จด หรือทอนเงินผิดไหมครับ', C.faint, { size: 'xxs', margin: 'sm', wrap: true, align: 'center' })]),
+  ];
+  return {
+    altText: `ปิดยอดเงินสด: ${statusTxt}`,
+    contents: bubble({
+      headerBox: header('ปิดยอดเงินสด', dateLabel, accent === C.danger ? C.danger : C.green),
+      bodyContents: body,
+    }),
+  };
+}
+
+// ---------- เฟส 17: งบกำไร-ขาดทุน (P&L) ----------
+function plCard({ monthLabel, pl, link }) {
+  const subRow = (label, val) => ({
+    type: 'box', layout: 'horizontal', contents: [
+      sol(label, C.faint, { size: 'xs', flex: 0, gravity: 'center' }),
+      sol(`${baht(val)} ฿`, C.faint, { size: 'xs', align: 'end', gravity: 'center' }),
+    ],
+  });
+  const body = [
+    { type: 'box', layout: 'horizontal', contents: [
+      sol('รายได้รวม', C.ink, { size: 'sm', weight: 'bold', flex: 0, gravity: 'center' }),
+      sol(`${baht(pl.revenue)} ฿`, C.green, { size: 'md', weight: 'bold', align: 'end', gravity: 'center' }),
+    ] },
+    subRow('• ขายหน้าร้าน', pl.storefront),
+    ...(pl.delivery > 0 ? [subRow('• เดลิเวอรี่', pl.delivery)] : []),
+    sep('md'),
+    statRow('หัก ต้นทุนวัตถุดิบ/ของใช้', `−${baht(pl.variable)}`, C.warn),
+    ...(pl.gpFees > 0 ? [statRow('หัก ค่าธรรมเนียมเดลิเวอรี่', `−${baht(pl.gpFees)}`, C.warn)] : []),
+    { type: 'box', layout: 'horizontal', margin: 'sm', contents: [
+      sol('= กำไรขั้นต้น', C.soft, { size: 'sm', weight: 'bold', flex: 0, gravity: 'center' }),
+      sol(`${baht(pl.grossProfit)} ฿`, C.ink, { size: 'sm', weight: 'bold', align: 'end', gravity: 'center' }),
+    ] },
+    statRow('หัก ค่าใช้จ่ายประจำ', `−${baht(pl.fixed)}`, C.warn),
+    sep('md'),
+    { type: 'box', layout: 'horizontal', contents: [
+      sol('กำไรสุทธิ', C.ink, { size: 'md', weight: 'bold', flex: 0, gravity: 'center' }),
+      sol(`${pl.netProfit >= 0 ? '' : '−'}${baht(Math.abs(pl.netProfit))} ฿`,
+        pl.netProfit >= 0 ? C.blue : C.danger, { size: 'xl', weight: 'bold', align: 'end', gravity: 'center' }),
+    ] },
+    sol(`อัตรากำไรสุทธิ ${pl.marginPct}% ของรายได้`, C.faint, { size: 'xxs', margin: 'sm', align: 'end' }),
+  ];
+  return {
+    altText: `งบกำไรขาดทุน ${monthLabel}: กำไรสุทธิ ${pl.netProfit >= 0 ? '' : '−'}${baht(Math.abs(pl.netProfit))} ฿`,
+    contents: bubble({
+      headerBox: header('งบกำไร-ขาดทุน', monthLabel, C.blueDeep),
+      bodyContents: body,
+      footerButton: linkButton('ดูรายงาน', link ? `${link}?tab=report` : null),
+    }),
+  };
+}
+
+// ---------- เฟส 18: ระบบสมาชิก ----------
+function membershipCard({ effective, until, used, limit, freeLimit, proLimit, contact }) {
+  const isPro = effective === 'pro';
+  const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+  const body = [
+    { type: 'box', layout: 'horizontal', contents: [
+      sol('แพ็กเกจปัจจุบัน', C.soft, { size: 'sm', flex: 0, gravity: 'center' }),
+      { type: 'box', layout: 'vertical', backgroundColor: isPro ? C.gold : C.bgSoft, cornerRadius: '14px',
+        paddingAll: '6px', paddingStart: '14px', paddingEnd: '14px', flex: 0, contents: [
+          sol(isPro ? 'PRO' : 'FREE', isPro ? C.white : C.soft, { size: 'sm', weight: 'bold', align: 'center' }),
+        ] },
+    ], justifyContent: 'space-between' },
+    ...(isPro && until ? [sol(`ใช้ได้ถึง ${until}`, C.faint, { size: 'xs', align: 'end' })] : []),
+    sep('lg'),
+    sol('การใช้ AI วันนี้', C.faint, { size: 'xs' }),
+    { type: 'box', layout: 'horizontal', contents: [
+      sol('จด/อ่านบิลด้วย AI', C.ink, { size: 'sm', flex: 0, gravity: 'center' }),
+      sol(`${used} / ${limit} ครั้ง`, used >= limit ? C.danger : C.ink, { size: 'sm', weight: 'bold', align: 'end', gravity: 'center' }),
+    ] },
+    { type: 'box', layout: 'vertical', height: '8px', backgroundColor: '#EDF2FB', cornerRadius: '4px', margin: 'sm',
+      contents: [{ type: 'box', layout: 'vertical', width: `${Math.max(2, pct)}%`, backgroundColor: used >= limit ? C.danger : C.blue, cornerRadius: '4px', contents: [{ type: 'filler' }] }] },
+    sol('คำสั่งดูข้อมูล (สรุป/รายงาน/งบ) ใช้ได้ไม่จำกัด', C.faint, { size: 'xxs', margin: 'sm', wrap: true }),
+  ];
+  if (!isPro) {
+    body.push(sep('lg'));
+    body.push(sol('อัปเกรดเป็น Pro ได้อะไร', C.ink, { size: 'sm', weight: 'bold' }));
+    body.push({ type: 'box', layout: 'vertical', margin: 'sm', spacing: 'sm', contents: [
+      { type: 'box', layout: 'baseline', contents: [sol('✓', C.green, { size: 'sm', flex: 0 }), sol(` จด/อ่านบิลด้วย AI ${proLimit} ครั้ง/วัน (จาก ${freeLimit})`, C.soft, { size: 'sm', wrap: true })] },
+      { type: 'box', layout: 'baseline', contents: [sol('✓', C.green, { size: 'sm', flex: 0 }), sol(' รองรับร้านที่จดเยอะทุกวัน', C.soft, { size: 'sm', wrap: true })] },
+    ] });
+    if (contact) body.push(sol(`สนใจอัปเกรด ทักแอดมินได้ที่ ${contact}`, C.blue, { size: 'xs', margin: 'md', wrap: true }));
+  }
+  return {
+    altText: isPro ? 'คุณเป็นสมาชิก Pro' : `แพ็กเกจ Free • ใช้ AI ${used}/${limit} วันนี้`,
+    contents: bubble({
+      headerBox: header(isPro ? 'สมาชิก Pro ⭐' : 'แพ็กเกจของคุณ', isPro ? 'ขอบคุณที่สนับสนุนครับ' : null, isPro ? C.gold : C.blue),
+      bodyContents: body,
+    }),
+  };
+}
+
 module.exports = {
   confirmCard, summaryCard, deliveryCard, menuProfitCard, menuLinkCard, dailyPushCard,
-  goalCard, goalReachedCard, costCompareCard, exportCard, weeklyCard,
+  goalCard, goalReachedCard, costCompareCard, exportCard, weeklyCard, welcomeCarousel,
+  breakEvenCard, cashCloseCard, plCard, membershipCard,
 };

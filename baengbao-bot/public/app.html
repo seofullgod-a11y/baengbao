@@ -496,7 +496,18 @@ async function loadSettings(){
   $('settingsBox').innerHTML='<div class="loading"><div class="spin"></div>กำลังโหลด...</div>';
   try{
     const s=await api('/api/settings');
+    const isPro=s.tier==='pro';
+    const qpct=s.aiLimit>0?Math.min(100,Math.round(s.aiUsed/s.aiLimit*100)):0;
     $('settingsBox').innerHTML=`
+      <div class="panel"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 15 8.5 22 9.3l-5 4.6 1.4 7L12 17.8 5.6 20.9 7 13.9l-5-4.6 7-0.8Z"/></svg>แพ็กเกจของฉัน</h3>
+        <div class="setrow"><div><div class="sl">แพ็กเกจปัจจุบัน</div><div class="sd">${isPro?('Pro'+(s.tierUntil?' · ถึง '+s.tierUntil:'')):'Free'}</div></div>
+          <div style="flex:none;background:${isPro?'#c8920a':'#eef3fc'};color:${isPro?'#fff':'#67789a'};font-family:Kanit;font-weight:700;font-size:13px;padding:6px 14px;border-radius:14px">${isPro?'PRO':'FREE'}</div></div>
+        <div style="padding-top:12px">
+          <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#67789a">ใช้ AI วันนี้</span><span style="font-weight:700;color:${s.aiUsed>=s.aiLimit?'#e5484d':'#0a1f44'}">${s.aiUsed} / ${s.aiLimit} ครั้ง</span></div>
+          <div class="pbar"><div class="pfill ${s.aiUsed>=s.aiLimit?'':''}" style="width:${Math.max(2,qpct)}%;background:${s.aiUsed>=s.aiLimit?'#e5484d':'#1f6bff'}"></div></div>
+          <div class="sd">คำสั่งดูข้อมูล (สรุป/รายงาน/งบ) ใช้ได้ไม่จำกัด</div>
+        </div>
+      </div>
       <div class="panel"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>การแจ้งเตือน</h3>
         <div class="setrow"><div><div class="sl">สรุปยอดรายวัน</div><div class="sd">บอทส่งสรุปยอด + กำไรให้ทุกเย็น</div></div>
           <div class="switch ${s.dailySummary?'on':''}" id="swDaily" onclick="toggleDaily()"></div></div>

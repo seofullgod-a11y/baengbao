@@ -56,6 +56,9 @@ async function init() {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_summary BOOLEAN DEFAULT TRUE;`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS goal_daily NUMERIC(12,2);`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS goal_monthly NUMERIC(12,2);`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS cash_float NUMERIC(12,2) DEFAULT 0;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS tier TEXT DEFAULT 'free';`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS tier_until DATE;`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS bot_state (
       k TEXT PRIMARY KEY,
@@ -100,6 +103,58 @@ async function getGoals(lineUserId) {
     monthly: r.goal_monthly != null ? +r.goal_monthly : null,
   };
 }
+
+// เฟส 16: เงินทอนตั้งต้น + ปิดยอดเงินสด
+async function setCashFloat(lineUserId, amount) {
+  await pool.query(`UPDATE users SET cash_float=$2 WHERE line_user_id=$1`, [lineUserId, amount]);
+}
+async function getCashFloat(lineUserId) {
+  const { rows } = await pool.query(`SELECT COALESCE(cash_float,0) AS f FROM users WHERE line_user_id=$1`, [lineUserId]);
+  return rows[0] ? +rows[0].f : 0;
+}
+// ยอดเงินสดของวัน (ตัดเดลิเวอรี่และค่า GP ออก เพราะไม่ใช่เงินสดในลิ้นชัก)
+async function cashTotalsForDay(lineUserId, dateStr) {
+  const { rows } = await pool.query(
+    `SELECT
+       COALESCE(SUM(amount) FILTER (WHERE type='income'  AND COALESCE(category,'') NOT LIKE 'ขายเดลิเวอรี่%'), 0) AS cash_in,
+       COALESCE(SUM(amount) FILTER (WHERE type='expense' AND COALESCE(category,'') NOT LIKE 'ค่า GP%'), 0)        AS cash_out
+     FROM transactions WHERE line_user_id=$1 AND txn_date=$2`,
+    [lineUserId, dateStr]
+  );
+  const r = rows[0];
+  return { cashIn: +r.cash_in, cashOut: +r.cash_out };
+}
+// รวมรายจ่ายประจำที่เปิดอยู่ (ต้นทุนคงที่ต่อเดือน)
+async function recurringMonthlyTotal(lineUserId) {
+  const { rows } = await pool.query(
+    `SELECT COALESCE(SUM(amount),0) AS s FROM recurring_expenses WHERE line_user_id=$1 AND active=TRUE`,
+    [lineUserId]
+  );
+  return +rows[0].s;
+}
+
+// เฟส 18: ระบบสมาชิก (Free/Pro)
+async function getMembership(lineUserId, today) {
+  const { rows } = await pool.query(
+    `SELECT COALESCE(tier,'free') AS tier, tier_until::text AS until FROM users WHERE line_user_id=$1`,
+    [lineUserId]
+  );
+  const r = rows[0] || { tier: 'free', until: null };
+  const effective = (r.tier === 'pro' && (!r.until || r.until >= today)) ? 'pro' : 'free';
+  return { tier: r.tier, until: r.until, effective };
+}
+async function setMembership(lineUserId, tier, until) {
+  await pool.query(`UPDATE users SET tier=$2, tier_until=$3 WHERE line_user_id=$1`, [lineUserId, tier, until || null]);
+}
+// อ่านจำนวนการใช้ AI วันนี้ (ไม่ +1)
+async function usageToday(lineUserId, dateStr) {
+  const { rows } = await pool.query(
+    `SELECT COALESCE(ai_calls,0) AS n FROM usage_daily WHERE line_user_id=$1 AND usage_date=$2`,
+    [lineUserId, dateStr]
+  );
+  return rows[0] ? +rows[0].n : 0;
+}
+
 async function getDailySummary(lineUserId) {
   const { rows } = await pool.query(
     `SELECT COALESCE(daily_summary, TRUE) AS on FROM users WHERE line_user_id=$1`, [lineUserId]
@@ -155,6 +210,18 @@ async function activeUsersForDaily(dateStr) {
        JOIN users u ON u.line_user_id = t.line_user_id
       WHERE t.txn_date = $1 AND COALESCE(u.daily_summary, TRUE) = TRUE`,
     [dateStr]
+  );
+  return rows.map(r => r.line_user_id);
+}
+
+// เฟส 15: ผู้ใช้ที่เพิ่งใช้งานช่วงนี้ แต่ "วันนี้ยังไม่ได้จด" (ไว้เตือนเบา ๆ)
+async function usersToRemind(today, weekAgo, yesterday) {
+  const { rows } = await pool.query(
+    `SELECT u.line_user_id FROM users u
+      WHERE COALESCE(u.daily_summary, TRUE) = TRUE
+        AND EXISTS (SELECT 1 FROM transactions t WHERE t.line_user_id=u.line_user_id AND t.txn_date BETWEEN $2 AND $3)
+        AND NOT EXISTS (SELECT 1 FROM transactions t WHERE t.line_user_id=u.line_user_id AND t.txn_date = $1)`,
+    [today, weekAgo, yesterday]
   );
   return rows.map(r => r.line_user_id);
 }
@@ -288,7 +355,18 @@ async function categoryBreakdown(lineUserId, ym, type = 'expense') {
   return rows.map(r => ({ category: r.category, amount: +r.amount }));
 }
 
-// เฟส 9: เทียบรายจ่ายต่อหมวด ช่วงเดือนนี้ vs เดือนก่อน (ช่วงวันเท่ากัน)
+// เฟส 17: แยกรายได้ขายหน้าร้าน vs เดลิเวอรี่ (สำหรับงบกำไรขาดทุน)
+async function incomeSplitForMonth(lineUserId, ym) {
+  const { rows } = await pool.query(
+    `SELECT
+       COALESCE(SUM(amount) FILTER (WHERE COALESCE(category,'') LIKE 'ขายเดลิเวอรี่%'), 0) AS delivery,
+       COALESCE(SUM(amount) FILTER (WHERE COALESCE(category,'') NOT LIKE 'ขายเดลิเวอรี่%'), 0) AS storefront
+     FROM transactions WHERE line_user_id=$1 AND type='income' AND to_char(txn_date,'YYYY-MM')=$2`,
+    [lineUserId, ym]
+  );
+  const r = rows[0];
+  return { delivery: +r.delivery, storefront: +r.storefront };
+}
 async function categoryCompare(lineUserId, thisStart, thisEnd, prevStart, prevEnd) {
   const { rows } = await pool.query(
     `WITH cur AS (
@@ -367,7 +445,9 @@ module.exports = {
   pool, init, upsertUser, insertTxn, dayTotals, monthTotals, rangeTotals,
   listMenus, createMenu, updateMenu, deleteMenu,
   dailySeries, categoryBreakdown, recentTxns, deleteTxn, updateTxn,
-  bumpUsage, setDailySummary, activeUsersForDaily, getState, setState,
+  bumpUsage, setDailySummary, activeUsersForDaily, usersToRemind, getState, setState,
   setGoal, getGoals, getDailySummary, categoryCompare, txnsForMonth,
+  setCashFloat, getCashFloat, cashTotalsForDay, recurringMonthlyTotal, incomeSplitForMonth,
+  getMembership, setMembership, usageToday,
   createRecurring, listRecurring, deleteRecurring, toggleRecurring, recurringToRun, markRecurringRun,
 };
