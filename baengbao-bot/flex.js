@@ -647,8 +647,38 @@ function helpCarousel(link) {
   return { altText: 'วิธีใช้งานแบ่งเบา 📖', contents: { type: 'carousel', contents: [b1, b2] } };
 }
 
+// ---------- เฟส 25: การ์ดวิธีจดบัญชี ----------
+function howToCard(link) {
+  const exBox = (bg, color, lines) => ({
+    type: 'box', layout: 'vertical', backgroundColor: bg, cornerRadius: '8px',
+    paddingAll: '11px', spacing: 'xs', margin: 'sm',
+    contents: lines.map(t => sol(t, color, { size: 'sm', weight: 'bold', wrap: true })),
+  });
+  const titleLine = (icon, name, desc) => ({
+    type: 'text', size: 'sm', wrap: true, margin: 'lg', contents: [
+      { type: 'span', text: `${icon} ${name}`, weight: 'bold', color: C.ink },
+      { type: 'span', text: `   ${desc}`, color: C.soft },
+    ],
+  });
+  const body = [
+    titleLine('🟢', 'ขายของ', 'พิมพ์ของที่ขาย + ราคา'),
+    exBox('#EAF7F0', C.green, ['ขายข้าวกะเพรา 50', 'ขายก๋วยเตี๋ยว 3 ชาม 150']),
+    titleLine('🟠', 'จ่ายเงิน', 'พิมพ์ของที่ซื้อ + ราคา'),
+    exBox('#FFF3E9', C.warn, ['ซื้อหมู 800', 'จ่ายค่าน้ำแข็ง 60']),
+    titleLine('📸', 'ถ่ายรูปก็ได้', 'บิล สลิป หรือยอด Grab/LineMan ส่งมาได้ เดี๋ยวผมอ่านให้'),
+  ];
+  return {
+    altText: 'วิธีจดบัญชี ✍️ ง่าย ๆ แค่พิมพ์หรือถ่ายรูป',
+    contents: bubble({
+      headerBox: header('วิธีจดบัญชี', 'ง่าย ๆ แค่พิมพ์หรือถ่ายรูป', C.green),
+      bodyContents: body,
+      footerButton: linkButton('เปิดแอปจัดการ', link),
+    }),
+  };
+}
+
 module.exports = {
   confirmCard, summaryCard, deliveryCard, menuProfitCard, menuLinkCard, dailyPushCard,
   goalCard, goalReachedCard, costCompareCard, exportCard, weeklyCard, welcomeCarousel,
-  breakEvenCard, cashCloseCard, plCard, membershipCard, helpCarousel,
+  breakEvenCard, cashCloseCard, plCard, membershipCard, helpCarousel, howToCard,
 };
