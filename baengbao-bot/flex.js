@@ -413,7 +413,7 @@ function welcomeCarousel(link) {
     body: { type: 'box', layout: 'vertical', paddingAll: '0px', contents: [
       header('ยินดีต้อนรับ! 🙏', 'ผู้ช่วยบัญชีร้านอาหาร', C.green),
       { type: 'box', layout: 'vertical', paddingAll: '16px', spacing: 'sm', contents: [
-        sol('ผมคือ "แบ่งเบา" ช่วยจดรายรับ-รายจ่าย ดูกำไรต่อจาน และสรุปให้อัตโนมัติ', C.ink, { size: 'sm', wrap: true }),
+        sol('ผมคือแบ่งเบา ผู้ช่วยจดรายรับ-รายจ่าย ดูกำไรต่อจาน และสรุปให้อัตโนมัติ', C.ink, { size: 'sm', wrap: true }),
         sol('แค่พิมพ์หรือถ่ายรูป ไม่ต้องลงแอปเพิ่ม ไม่ต้องตั้งค่าอะไรเลย', C.soft, { size: 'xs', wrap: true, margin: 'sm' }),
       ] },
     ] },
@@ -424,7 +424,7 @@ function welcomeCarousel(link) {
       header('เริ่มจดง่าย ๆ ✍️', 'ลองพิมพ์ดูเลย', C.blue),
       { type: 'box', layout: 'vertical', paddingAll: '16px', spacing: 'md', contents: [
         { type: 'box', layout: 'vertical', backgroundColor: C.bgSoft, cornerRadius: '10px', paddingAll: '12px', contents: [
-          sol('"ขายกะเพรา 5 จาน 250"', C.blueDeep, { size: 'sm', weight: 'bold', wrap: true }),
+          sol('เช่น  ขายกะเพรา 5 จาน 250', C.blueDeep, { size: 'sm', weight: 'bold', wrap: true }),
         ] },
         li('ถ่ายรูปบิล/ใบเสร็จ ส่งมาได้ ผมอ่านให้'),
         li('แคปหน้าสรุปยอด Grab / LineMan / Shopee'),
@@ -597,8 +597,58 @@ function membershipCard({ effective, until, used, limit, freeLimit, proLimit, co
   };
 }
 
+// ---------- เฟส 24: การ์ดวิธีใช้งาน (แทนข้อความยาว ๆ) ----------
+function helpCarousel(link) {
+  const secHead = (txt) => ({ type: 'text', text: txt, size: 'xs', weight: 'bold', color: C.blue, margin: 'lg' });
+  const cmdLine = (cmd, desc) => ({
+    type: 'text', wrap: true, size: 'sm', margin: 'md', contents: [
+      { type: 'span', text: cmd + '   ', weight: 'bold', color: C.ink },
+      { type: 'span', text: desc, color: C.soft },
+    ],
+  });
+  const bub = (title, sub, color, rows, footer) => {
+    const b = {
+      type: 'bubble', size: 'kilo',
+      body: { type: 'box', layout: 'vertical', paddingAll: '0px', contents: [
+        header(title, sub, color),
+        { type: 'box', layout: 'vertical', paddingAll: '16px', paddingTop: '8px', contents: rows },
+      ] },
+    };
+    if (footer) b.footer = { type: 'box', layout: 'vertical', paddingAll: '12px', paddingTop: '0px', contents: [footer] };
+    return b;
+  };
+
+  const b1 = bub('วิธีใช้งาน', 'แบ่งเบา ผู้ช่วยบัญชี', C.green, [
+    secHead('จดบัญชี'),
+    cmdLine('พิมพ์เลย', 'เช่น  ขายกะเพรา 250 · ซื้อหมู 800'),
+    cmdLine('ถ่ายรูป', 'บิล สลิป หรือยอด Grab/LineMan ส่งมาได้'),
+    sep('lg'),
+    secHead('ดูยอด'),
+    cmdLine('วันนี้', 'ยอดขาย–กำไรของวันนี้'),
+    cmdLine('เดือนนี้', 'สรุปทั้งเดือน'),
+    cmdLine('รายงาน', 'กราฟ + แดชบอร์ด'),
+  ], link ? { type: 'button', style: 'primary', color: C.blue, height: 'sm', action: { type: 'uri', label: 'เปิดแอปจัดการ', uri: link } } : null);
+
+  const b2 = bub('เครื่องมือร้าน', 'พิมพ์คำสั่งสั้น ๆ', C.blueDeep, [
+    secHead('ขายของ'),
+    cmdLine('เมนู', 'ตั้งเมนู + ดูกำไรต่อจาน'),
+    cmdLine('เป้า', 'ตั้งเป้ายอดขาย'),
+    sep('lg'),
+    secHead('เงิน & กำไร'),
+    cmdLine('จุดคุ้มทุน', 'ต้องขายเท่าไหร่ถึงไม่ขาดทุน'),
+    cmdLine('ปิดยอด', 'เช็กเงินสดในลิ้นชัก'),
+    cmdLine('งบ', 'กำไร–ขาดทุนรายเดือน'),
+    sep('lg'),
+    secHead('อื่น ๆ'),
+    cmdLine('ออกรายงาน', 'ไฟล์ Excel ส่งบัญชี'),
+    cmdLine('เพิ่มพนักงาน', 'ให้ลูกน้องช่วยจด'),
+  ]);
+
+  return { altText: 'วิธีใช้งานแบ่งเบา 📖', contents: { type: 'carousel', contents: [b1, b2] } };
+}
+
 module.exports = {
   confirmCard, summaryCard, deliveryCard, menuProfitCard, menuLinkCard, dailyPushCard,
   goalCard, goalReachedCard, costCompareCard, exportCard, weeklyCard, welcomeCarousel,
-  breakEvenCard, cashCloseCard, plCard, membershipCard,
+  breakEvenCard, cashCloseCard, plCard, membershipCard, helpCarousel,
 };

@@ -55,7 +55,7 @@ function quotaMessage(q) {
   }
   return `วันนี้ใช้ผู้ช่วย AI ครบโควตาฟรีแล้วครับ (${q.limit} ครั้ง/วัน) 🙏\n` +
     `คำสั่งดูข้อมูลอย่าง "สรุป" "รายงาน" "เมนู" ยังใช้ได้ปกติ พรุ่งนี้รีเซ็ตใหม่\n\n` +
-    `อยากจดได้ไม่อั้นกว่านี้? พิมพ์ "สมาชิก" เพื่อดูแพ็กเกจ Pro`;
+    `อยากจดได้ไม่อั้นกว่านี้ พิมพ์คำว่า  สมาชิก  เพื่อดูแพ็กเกจ Pro`;
 }
 
 // ---------- helpers ----------
@@ -300,33 +300,6 @@ async function recordDelivery(userId, p) {
   return flex.deliveryCard({ platform, gross, commission, net: netShown, day, dateLabel, ordersTxt });
 }
 
-const HELP =
-`สวัสดีครับ ผม "แบ่งเบา" ผู้ช่วยบัญชีร้านอาหาร 🧾
-
-พิมพ์บอกได้เลย เช่น
-• ขายกะเพรา 5 จาน 250
-• ซื้อหมู 800
-• จ่ายค่าแก๊ส 450
-หรือถ่ายรูปบิลส่งมา เดี๋ยวผมอ่านให้
-📱 แคปหน้าสรุปยอด Grab/LineMan/Shopee ส่งมาได้ ผมลงให้พร้อมหักค่า GP
-
-คำสั่ง:
-• "สรุป" หรือ "วันนี้" — ดูยอดวันนี้
-• "เดือนนี้" — ดูยอดทั้งเดือน
-• "เมนู" — ตั้งเมนู + ดูกำไรต่อจาน
-• "กำไรเมนู" — ดูกำไรต่อจานของทุกเมนู
-• "รายงาน" — เปิดแดชบอร์ดกราฟ + แก้/ลบรายการ
-• "ปิดสรุป" / "เปิดสรุป" — ปิด/เปิดแจ้งเตือนสรุปรายวัน
-• "เป้าวันละ 5000" — ตั้งเป้ายอดขาย, พิมพ์ "เป้า" เพื่อดูความคืบหน้า
-• "ต้นทุน" — เทียบรายจ่ายแต่ละหมวดกับเดือนก่อน (เตือนของขึ้นราคา)
-• "สัปดาห์" — สรุป 7 วันล่าสุด + เทียบสัปดาห์ก่อน
-• "จุดคุ้มทุน" — ต้องขายวันละเท่าไหร่ถึงไม่ขาดทุน
-• "งบ" — งบกำไร-ขาดทุนรายเดือน (รายได้ → ต้นทุน → กำไรสุทธิ)
-• "ปิดยอด 3500" — เช็กเงินสดในลิ้นชักขาด/เกิน (ตั้งเงินทอนด้วย "ตั้งเงินทอน 1000")
-• "ออกรายงาน" — ดาวน์โหลดไฟล์ Excel ส่งบัญชี/ยื่นภาษี (เพิ่ม "เดือนก่อน" ได้)
-• "สมาชิก" — ดูแพ็กเกจ + โควตา AI วันนี้
-• "เพิ่มพนักงาน" — ให้ลูกน้องช่วยจดเข้าบัญชีร้านเดียวกัน (พนักงานพิมพ์ "เข้าร้าน <รหัส>")`;
-
 // ---------- event handling ----------
 async function handleEvent(ev) {
   if (ev.type === 'follow') {
@@ -335,7 +308,7 @@ async function handleEvent(ev) {
     const w = flex.welcomeCarousel(liffUrl());
     return lineReply(ev.replyToken, [
       { type: 'flex', altText: w.altText, contents: w.contents },
-      { type: 'text', text: 'มาลองใช้ด้วยกันเลยครับ 😊\n\nขั้นแรก ลองพิมพ์ยอดขายล่าสุดของวันนี้มาดูครับ\nเช่น  ขายข้าว 50\n\n(พิมพ์ของจริงได้เลย เดี๋ยวผมจดให้ — หรือพิมพ์ "ข้าม" ถ้าไม่อยากให้สอน)' },
+      { type: 'text', text: 'มาลองใช้ด้วยกันเลยครับ 😊\n\nขั้นแรก ลองพิมพ์ยอดขายล่าสุดของวันนี้มาดูครับ\nเช่น  ขายข้าว 50\n\n(พิมพ์ของจริงได้เลย เดี๋ยวผมจดให้ — หรือพิมพ์คำว่า ข้าม ถ้าไม่อยากให้สอน)' },
     ]);
   }
   if (ev.type !== 'message' || !ev.source || ev.source.type !== 'user') return;
@@ -350,13 +323,15 @@ async function handleEvent(ev) {
     const t = raw.toLowerCase();
 
     try {
-      if (['ช่วย', 'help', 'วิธีใช้', 'เริ่ม', 'start'].some(k => t.includes(k)))
-        return replyText(ev.replyToken, HELP);
+      if (['ช่วย', 'help', 'วิธีใช้', 'เริ่ม', 'start'].some(k => t.includes(k))) {
+        const h = flex.helpCarousel(liffUrl());
+        return replyFlex(ev.replyToken, h.altText, h.contents);
+      }
 
       if (raw === 'ข้าม' || raw.includes('ข้ามการสอน') || t === 'skip') {
         if (await db.getOnboard(identityId) > 0) {
           await db.setOnboard(identityId, 0);
-          return replyText(ev.replyToken, 'ได้เลยครับ ข้ามการสอนแล้ว 👌\nอยากดูวิธีจดเมื่อไหร่ พิมพ์ "วิธีจด" หรือกดปุ่มข้างล่างได้ตลอดนะครับ');
+          return replyText(ev.replyToken, 'ได้เลยครับ ข้ามการสอนแล้ว 👌\nอยากดูวิธีจด กดปุ่ม ✏️ วิธีจด ข้างล่างได้ตลอดนะครับ');
         }
       }
 
@@ -376,21 +351,21 @@ async function handleEvent(ev) {
       // ===== เฟส 20: ระบบเพิ่มพนักงาน (แชร์บัญชีร้าน) — ใช้ identityId =====
       const isStaff = userId !== identityId; // ถ้าบัญชีข้อมูล != ตัวเอง แปลว่าเป็นพนักงาน
       if (['เพิ่มพนักงาน', 'เพิ่มลูกน้อง', 'เพิ่มทีม', 'invite'].some(k => raw.includes(k))) {
-        if (isStaff) return replyText(ev.replyToken, 'คุณเป็นพนักงานของร้านอื่นอยู่ครับ ถ้าจะเปิดร้านของตัวเองให้พิมพ์ "ออกจากร้าน" ก่อน');
+        if (isStaff) return replyText(ev.replyToken, 'ตอนนี้คุณเป็นพนักงานของร้านอื่นอยู่ครับ\nถ้าจะเปิดร้านของตัวเอง พิมพ์คำว่า  ออกจากร้าน  ก่อนนะครับ');
         const code = await db.ensureInvite(identityId);
         return replyText(ev.replyToken,
-          `เพิ่มพนักงานได้เลยครับ 👥\n\nรหัสร้านของคุณคือ\n👉 ${code}\n\nให้พนักงาน:\n1) แอดเพื่อนบอทแบ่งเบา\n2) พิมพ์ว่า  เข้าร้าน ${code}\n\nหลังจากนั้นที่พนักงานจด จะเข้าบัญชีร้านเดียวกับคุณ\nดูรายชื่อทีมพิมพ์ "พนักงาน"`);
+          `เพิ่มพนักงานได้เลยครับ 👥\n\nรหัสร้านของคุณคือ\n👉 ${code}\n\nให้พนักงาน:\n1) แอดเพื่อนบอทแบ่งเบา\n2) พิมพ์ว่า  เข้าร้าน ${code}\n\nหลังจากนั้นที่พนักงานจด จะเข้าบัญชีร้านเดียวกับคุณ\nดูรายชื่อทีม พิมพ์คำว่า พนักงาน`);
       }
       if (raw.startsWith('เข้าร้าน') || /^join\s/i.test(raw)) {
         const code = raw.replace(/^เข้าร้าน|^join/i, '').trim().toUpperCase();
-        if (!code) return replyText(ev.replyToken, 'พิมพ์ เช่น "เข้าร้าน ABC123" (ขอรหัสจากเจ้าของร้าน)');
+        if (!code) return replyText(ev.replyToken, 'พิมพ์รหัสร้านแบบนี้ครับ\nเข้าร้าน ABC123\n(ขอรหัสจากเจ้าของร้าน)');
         if (await db.countMembers(identityId) > 0)
           return replyText(ev.replyToken, 'ร้านของคุณมีพนักงานอยู่ จึงย้ายไปเป็นพนักงานร้านอื่นไม่ได้ครับ');
         const owner = await db.findByInvite(code);
         if (!owner) return replyText(ev.replyToken, 'ไม่พบรหัสร้านนี้ครับ ลองเช็กตัวอักษรอีกที (พิมพ์ใหญ่-เล็กไม่สำคัญ)');
         if (owner === identityId) return replyText(ev.replyToken, 'นี่คือรหัสร้านของคุณเองครับ 😄');
         await db.joinShop(identityId, owner);
-        return replyText(ev.replyToken, 'เข้าร้านสำเร็จ! 🎉\nตั้งแต่นี้ที่คุณจด/ถ่ายบิล จะเข้าบัญชีร้านเดียวกับเจ้าของ\nรายการเก่าที่เคยจดด้วยบัญชีตัวเองจะแยกไว้ ไม่หาย\n\nถ้าจะออกพิมพ์ "ออกจากร้าน"');
+        return replyText(ev.replyToken, 'เข้าร้านสำเร็จ! 🎉\nตั้งแต่นี้ที่คุณจด/ถ่ายบิล จะเข้าบัญชีร้านเดียวกับเจ้าของ\nรายการเก่าที่เคยจดด้วยบัญชีตัวเองจะแยกไว้ ไม่หาย\n\nอยากเลิกช่วยจด พิมพ์คำว่า  ออกจากร้าน');
       }
       if (raw.includes('ออกจากร้าน') || raw === 'leave') {
         if (!isStaff) return replyText(ev.replyToken, 'ตอนนี้คุณใช้บัญชีของตัวเองอยู่ ไม่ได้เป็นพนักงานร้านไหนครับ');
@@ -398,10 +373,10 @@ async function handleEvent(ev) {
         return replyText(ev.replyToken, 'ออกจากร้านแล้วครับ กลับมาใช้บัญชีของตัวเองตามเดิม');
       }
       if (['พนักงาน', 'ลูกน้อง', 'ทีมงาน', 'ดูทีม'].some(k => raw.includes(k))) {
-        if (isStaff) return replyText(ev.replyToken, 'คุณกำลังช่วยจดให้ร้าน (บัญชีของเจ้าของร้าน) อยู่ครับ 👍\nถ้าจะกลับไปใช้บัญชีตัวเองพิมพ์ "ออกจากร้าน"');
+        if (isStaff) return replyText(ev.replyToken, 'คุณกำลังช่วยจดให้ร้าน (บัญชีของเจ้าของ) อยู่ครับ 👍\nอยากกลับไปใช้บัญชีตัวเอง พิมพ์คำว่า  ออกจากร้าน');
         const members = await db.listShopMembers(identityId);
         if (!members.length)
-          return replyText(ev.replyToken, 'ยังไม่มีพนักงานในร้านครับ\nพิมพ์ "เพิ่มพนักงาน" เพื่อสร้างรหัสเชิญ');
+          return replyText(ev.replyToken, 'ยังไม่มีพนักงานในร้านครับ\nพิมพ์คำว่า  เพิ่มพนักงาน  เพื่อสร้างรหัสเชิญได้เลย');
         const code = await db.ensureInvite(identityId);
         const list = members.map((m, i) => `${i + 1}. ${m.name || '(ไม่มีชื่อ)'}`).join('\n');
         return replyText(ev.replyToken, `พนักงานในร้าน (${members.length} คน) 👥\n${list}\n\nรหัสเชิญเพิ่ม: ${code}`);
@@ -409,7 +384,7 @@ async function handleEvent(ev) {
 
       if (['ปิดสรุป', 'ปิดแจ้งเตือน', 'ปิดเตือน'].some(k => raw.includes(k))) {
         await db.setDailySummary(userId, false);
-        return replyText(ev.replyToken, 'ปิดแจ้งเตือนสรุปรายวันแล้วครับ 🔕\nพิมพ์ "เปิดสรุป" เมื่อไหร่ก็เปิดใหม่ได้');
+        return replyText(ev.replyToken, 'ปิดแจ้งเตือนสรุปรายวันแล้วครับ 🔕\nอยากเปิดใหม่ พิมพ์คำว่า  เปิดสรุป  ได้ทุกเมื่อ');
       }
       if (['เปิดสรุป', 'เปิดแจ้งเตือน', 'เปิดเตือน'].some(k => raw.includes(k))) {
         await db.setDailySummary(userId, true);
@@ -426,10 +401,10 @@ async function handleEvent(ev) {
           const amt = Math.round(parseFloat(numMatch[0]));
           if (/เดือน/.test(raw)) {
             await db.setGoal(userId, { monthly: amt });
-            return replyText(ev.replyToken, `ตั้งเป้ายอดขายเดือนละ ${baht(amt)} ฿ แล้วครับ 🎯\nพิมพ์ "เป้า" เพื่อดูความคืบหน้าได้ตลอด`);
+            return replyText(ev.replyToken, `ตั้งเป้ายอดขายเดือนละ ${baht(amt)} ฿ แล้วครับ 🎯\nดูความคืบหน้าได้ที่ปุ่ม 🎯 เป้า ข้างล่าง`);
           }
           await db.setGoal(userId, { daily: amt });
-          return replyText(ev.replyToken, `ตั้งเป้ายอดขายวันละ ${baht(amt)} ฿ แล้วครับ 🎯\nพิมพ์ "เป้า" เพื่อดูความคืบหน้าได้ตลอด`);
+          return replyText(ev.replyToken, `ตั้งเป้ายอดขายวันละ ${baht(amt)} ฿ แล้วครับ 🎯\nดูความคืบหน้าได้ที่ปุ่ม 🎯 เป้า ข้างล่าง`);
         }
         // ไม่มีตัวเลข → โชว์ความคืบหน้า
         const goals = await db.getGoals(userId);
@@ -460,7 +435,7 @@ async function handleEvent(ev) {
         const menus = await db.listMenus(userId);
         if (!menus.length) {
           const u = liffUrl();
-          return replyText(ev.replyToken, 'ยังไม่มีเมนูเลยครับ ตั้งเมนูแรกได้ที่นี่' + (u ? `\n${u}` : ' (พิมพ์ "เมนู")'));
+          return replyText(ev.replyToken, 'ยังไม่มีเมนูเลยครับ ตั้งเมนูแรกได้ที่นี่' + (u ? `\n${u}` : ' ครับ'));
         }
         const rows = menus
           .slice()
@@ -519,7 +494,7 @@ async function handleEvent(ev) {
         const fixedMonthly = await db.recurringMonthlyTotal(userId);
         if (!fixedMonthly) {
           const u = liffUrl();
-          return replyText(ev.replyToken, 'คำนวณจุดคุ้มทุนต้องรู้ "ต้นทุนคงที่" ก่อนครับ\nไปตั้งรายจ่ายประจำ (ค่าเช่า/เงินเดือน) ในแอป แท็บ "ตั้งค่า"' + (u ? `\n${u}` : '') + '\nแล้วพิมพ์ "จุดคุ้มทุน" อีกที');
+          return replyText(ev.replyToken, 'ขอข้อมูลเพิ่มอีกนิดครับ 🙏\nจุดคุ้มทุนต้องรู้ค่าใช้จ่ายประจำก่อน เช่น ค่าเช่า เงินเดือน\nไปตั้งได้ในแอป แท็บตั้งค่า' + (u ? `\n${u}` : '') + '\nแล้วลองใหม่อีกครั้งนะครับ');
         }
         // กำไรขั้นต้นเฉลี่ย: จากเมนูก่อน ถ้าไม่มีค่อยประเมินจากข้อมูล 30 วัน
         const menus = await db.listMenus(userId);
@@ -535,7 +510,7 @@ async function handleEvent(ev) {
           marginRatio = (r30.income - variable) / r30.income;
         }
         if (!marginRatio || marginRatio <= 0) {
-          return replyText(ev.replyToken, 'ข้อมูลยังไม่พอคำนวณกำไรขั้นต้นครับ ลองตั้งเมนู+ราคาต้นทุน (พิมพ์ "เมนู") หรือจดรายรับ-รายจ่ายสักพักแล้วลองใหม่');
+          return replyText(ev.replyToken, 'ข้อมูลยังไม่พอคำนวณกำไรครับ 🙏\nลองตั้งเมนูพร้อมราคาต้นทุน หรือจดรายรับ-รายจ่ายสักพัก แล้วลองใหม่นะครับ');
         }
         const beMonthly = Math.round(fixedMonthly / marginRatio);
         const beDaily = Math.round(beMonthly / 30);
@@ -568,10 +543,10 @@ async function handleEvent(ev) {
 
       if (raw.includes('ตั้งเงินทอน') || raw.includes('เงินทอนตั้งต้น')) {
         const m = raw.replace(/,/g, '').match(/\d+(\.\d+)?/);
-        if (!m) return replyText(ev.replyToken, 'พิมพ์ เช่น "ตั้งเงินทอน 1000" ครับ (เงินที่ใส่ลิ้นชักไว้ตอนเปิดร้าน)');
+        if (!m) return replyText(ev.replyToken, 'พิมพ์แบบนี้ครับ\nตั้งเงินทอน 1000\n(เงินที่ใส่ลิ้นชักไว้ตอนเปิดร้าน)');
         const amt = Math.round(parseFloat(m[0]) * 100) / 100;
         await db.setCashFloat(userId, amt);
-        return replyText(ev.replyToken, `ตั้งเงินทอนตั้งต้น ${baht(amt)} ฿ แล้วครับ\nสิ้นวันพิมพ์ "ปิดยอด <เงินที่นับได้>" เพื่อเช็กเงินขาด-เกิน`);
+        return replyText(ev.replyToken, `ตั้งเงินทอนตั้งต้น ${baht(amt)} ฿ แล้วครับ\nสิ้นวันพิมพ์  ปิดยอด  ตามด้วยเงินที่นับได้ เช่น ปิดยอด 3500`);
       }
 
       if (raw.includes('ปิดยอด')) {
@@ -582,7 +557,7 @@ async function handleEvent(ev) {
         const m = raw.replace(/,/g, '').match(/\d+(\.\d+)?/);
         if (!m) {
           return replyText(ev.replyToken,
-            `ปิดยอดเงินสดวันนี้ 💵\nตอนนี้ในลิ้นชักควรมี ${baht(expected)} ฿\n(เงินทอนตั้งต้น ${baht(openingFloat)} + ขายสด ${baht(cashIn)} − จ่ายสด ${baht(cashOut)})\n\nนับเงินจริงแล้วพิมพ์ "ปิดยอด <จำนวน>" เพื่อเทียบครับ\nถ้าเงินทอนตั้งต้นไม่ตรง พิมพ์ "ตั้งเงินทอน <จำนวน>"`);
+            `ปิดยอดเงินสดวันนี้ 💵\nตอนนี้ในลิ้นชักควรมี ${baht(expected)} ฿\n(เงินทอนตั้งต้น ${baht(openingFloat)} + ขายสด ${baht(cashIn)} − จ่ายสด ${baht(cashOut)})\n\nนับเงินจริงแล้วพิมพ์  ปิดยอด  ตามด้วยจำนวน เช่น ปิดยอด 3500\nถ้าเงินทอนตั้งต้นไม่ตรง พิมพ์  ตั้งเงินทอน  ตามด้วยจำนวน`);
         }
         const actual = Math.round(parseFloat(m[0]) * 100) / 100;
         const c = flex.cashCloseCard({
@@ -619,7 +594,7 @@ async function handleEvent(ev) {
           'ถ้าจะ "จดจ่าย" พิมพ์ เช่น  ซื้อหมู 800\n' +
           'หรือกดปุ่มข้างล่างได้เลยครับ 👇');
       if (parsed.amount == null)
-        return replyText(ev.replyToken, 'รับทราบว่าเป็นรายการ แต่ยังไม่เห็นยอดเงินเลยครับ 🙏\nลองพิมพ์ยอดมาด้วยนะ เช่น "ซื้อหมู 800"');
+        return replyText(ev.replyToken, 'รับทราบว่าเป็นรายการ แต่ยังไม่เห็นยอดเงินครับ 🙏\nลองใส่ยอดมาด้วยนะ เช่น ซื้อหมู 800');
       const r = await confirmAndSummary(userId, parsed, 'text');
       const nudge = await onboardNudge(identityId);
       if (nudge) r.messages.push({ type: 'text', text: nudge });
@@ -747,7 +722,7 @@ app.post('/admin/api/set-tier', express.json(), async (req, res) => {
 app.get('/export.xlsx', async (req, res) => {
   try {
     const v = verifyExport(req.query.t);
-    if (!v) return res.status(403).send('ลิงก์หมดอายุหรือไม่ถูกต้อง — พิมพ์ "ออกรายงาน" ในไลน์เพื่อขอลิงก์ใหม่');
+    if (!v) return res.status(403).send('ลิงก์หมดอายุหรือไม่ถูกต้อง — พิมพ์คำว่า ออกรายงาน ในไลน์เพื่อขอลิงก์ใหม่');
     const [rows, totals, expenseCats] = await Promise.all([
       db.txnsForMonth(v.userId, v.ym),
       db.monthTotals(v.userId, v.ym),
@@ -942,7 +917,7 @@ async function sendJotReminders() {
   let sent = 0;
   for (const uid of users) {
     try {
-      await linePush(uid, [{ type: 'text', text: '🌙 วันนี้ยังไม่ได้จดรายการเลยนะครับ\nถ้ามีขายหรือซื้ออะไรวันนี้ พิมพ์บอกผมได้เลย เดี๋ยวจดให้ (ไม่อยากให้ลืม 😊)\n\n(ไม่อยากรับเตือนนี้ พิมพ์ "ปิดสรุป" ได้)' }]);
+      await linePush(uid, [{ type: 'text', text: '🌙 วันนี้ยังไม่ได้จดรายการเลยนะครับ\nถ้ามีขายหรือซื้ออะไรวันนี้ พิมพ์บอกผมได้เลย เดี๋ยวจดให้ (ไม่อยากให้ลืม 😊)\n\n(ไม่อยากรับเตือนนี้ พิมพ์คำว่า ปิดสรุป ได้)' }]);
       sent++;
       await new Promise(r => setTimeout(r, 120));
     } catch (e) { console.error('[jotRemind]', uid.slice(0, 6), e.message); }
