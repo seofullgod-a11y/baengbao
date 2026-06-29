@@ -7,19 +7,18 @@ const AUTH = token => ({ Authorization: `Bearer ${token}` });
 // ปุ่มทั้ง 6 ส่งเป็นข้อความ ตรงกับคำสั่งที่บอทรองรับอยู่แล้ว
 function menuDefinition() {
   return {
-    size: { width: 2500, height: 1686 },
+    size: { width: 2500, height: 1667 },
     selected: true,
     name: 'baengbao-main',
     chatBarText: 'เมนูแบ่งเบา',
     areas: [
-      // แถวบน (ใหญ่ ใช้ทุกวัน) สูง 1010
-      { bounds: { x: 0,    y: 0,    width: 833, height: 1010 }, action: { type: 'message', text: 'สรุป' } },
-      { bounds: { x: 833,  y: 0,    width: 834, height: 1010 }, action: { type: 'message', text: 'วิธีจด' } },
-      { bounds: { x: 1667, y: 0,    width: 833, height: 1010 }, action: { type: 'message', text: 'รายงาน' } },
-      // แถวล่าง (เสริม) สูง 676
-      { bounds: { x: 0,    y: 1010, width: 833, height: 676 },  action: { type: 'message', text: 'เป้า' } },
-      { bounds: { x: 833,  y: 1010, width: 834, height: 676 },  action: { type: 'message', text: 'เมนู' } },
-      { bounds: { x: 1667, y: 1010, width: 833, height: 676 },  action: { type: 'message', text: 'ช่วย' } },
+      // แบนเนอร์ด้านบน (พื้นที่ใหญ่ กดดูยอดวันนี้)
+      { bounds: { x: 0, y: 0, width: 2500, height: 700 }, action: { type: 'message', text: 'สรุป' } },
+      // 4 การ์ดด้านล่าง
+      { bounds: { x: 0,    y: 700, width: 625, height: 967 }, action: { type: 'message', text: 'วิธีจด' } },
+      { bounds: { x: 625,  y: 700, width: 625, height: 967 }, action: { type: 'message', text: 'ช่วย' } },
+      { bounds: { x: 1250, y: 700, width: 625, height: 967 }, action: { type: 'message', text: 'รายงาน' } },
+      { bounds: { x: 1875, y: 700, width: 625, height: 967 }, action: { type: 'message', text: 'เมนู' } },
     ],
   };
 }
