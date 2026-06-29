@@ -293,7 +293,8 @@ const HELP =
 • "งบ" — งบกำไร-ขาดทุนรายเดือน (รายได้ → ต้นทุน → กำไรสุทธิ)
 • "ปิดยอด 3500" — เช็กเงินสดในลิ้นชักขาด/เกิน (ตั้งเงินทอนด้วย "ตั้งเงินทอน 1000")
 • "ออกรายงาน" — ดาวน์โหลดไฟล์ Excel ส่งบัญชี/ยื่นภาษี (เพิ่ม "เดือนก่อน" ได้)
-• "สมาชิก" — ดูแพ็กเกจ + โควตา AI วันนี้`;
+• "สมาชิก" — ดูแพ็กเกจ + โควตา AI วันนี้
+• "เพิ่มพนักงาน" — ให้ลูกน้องช่วยจดเข้าบัญชีร้านเดียวกัน (พนักงานพิมพ์ "เข้าร้าน <รหัส>")`;
 
 // ---------- event handling ----------
 async function handleEvent(ev) {
@@ -306,8 +307,9 @@ async function handleEvent(ev) {
   }
   if (ev.type !== 'message' || !ev.source || ev.source.type !== 'user') return;
 
-  const userId = ev.source.userId;
-  await db.upsertUser(userId);
+  const identityId = ev.source.userId;        // ตัวตนของคนที่พิมพ์ (เจ้าของหรือพนักงาน)
+  await db.upsertUser(identityId);
+  const userId = await db.accountOf(identityId); // บัญชีข้อมูลร้าน (แชร์กันในร้าน)
 
   // ----- text -----
   if (ev.message.type === 'text') {
@@ -317,6 +319,40 @@ async function handleEvent(ev) {
     try {
       if (['ช่วย', 'help', 'วิธีใช้', 'เริ่ม', 'start'].some(k => t.includes(k)))
         return replyText(ev.replyToken, HELP);
+
+      // ===== เฟส 20: ระบบเพิ่มพนักงาน (แชร์บัญชีร้าน) — ใช้ identityId =====
+      const isStaff = userId !== identityId; // ถ้าบัญชีข้อมูล != ตัวเอง แปลว่าเป็นพนักงาน
+      if (['เพิ่มพนักงาน', 'เพิ่มลูกน้อง', 'เพิ่มทีม', 'invite'].some(k => raw.includes(k))) {
+        if (isStaff) return replyText(ev.replyToken, 'คุณเป็นพนักงานของร้านอื่นอยู่ครับ ถ้าจะเปิดร้านของตัวเองให้พิมพ์ "ออกจากร้าน" ก่อน');
+        const code = await db.ensureInvite(identityId);
+        return replyText(ev.replyToken,
+          `เพิ่มพนักงานได้เลยครับ 👥\n\nรหัสร้านของคุณคือ\n👉 ${code}\n\nให้พนักงาน:\n1) แอดเพื่อนบอทแบ่งเบา\n2) พิมพ์ว่า  เข้าร้าน ${code}\n\nหลังจากนั้นที่พนักงานจด จะเข้าบัญชีร้านเดียวกับคุณ\nดูรายชื่อทีมพิมพ์ "พนักงาน"`);
+      }
+      if (raw.startsWith('เข้าร้าน') || /^join\s/i.test(raw)) {
+        const code = raw.replace(/^เข้าร้าน|^join/i, '').trim().toUpperCase();
+        if (!code) return replyText(ev.replyToken, 'พิมพ์ เช่น "เข้าร้าน ABC123" (ขอรหัสจากเจ้าของร้าน)');
+        if (await db.countMembers(identityId) > 0)
+          return replyText(ev.replyToken, 'ร้านของคุณมีพนักงานอยู่ จึงย้ายไปเป็นพนักงานร้านอื่นไม่ได้ครับ');
+        const owner = await db.findByInvite(code);
+        if (!owner) return replyText(ev.replyToken, 'ไม่พบรหัสร้านนี้ครับ ลองเช็กตัวอักษรอีกที (พิมพ์ใหญ่-เล็กไม่สำคัญ)');
+        if (owner === identityId) return replyText(ev.replyToken, 'นี่คือรหัสร้านของคุณเองครับ 😄');
+        await db.joinShop(identityId, owner);
+        return replyText(ev.replyToken, 'เข้าร้านสำเร็จ! 🎉\nตั้งแต่นี้ที่คุณจด/ถ่ายบิล จะเข้าบัญชีร้านเดียวกับเจ้าของ\nรายการเก่าที่เคยจดด้วยบัญชีตัวเองจะแยกไว้ ไม่หาย\n\nถ้าจะออกพิมพ์ "ออกจากร้าน"');
+      }
+      if (raw.includes('ออกจากร้าน') || raw === 'leave') {
+        if (!isStaff) return replyText(ev.replyToken, 'ตอนนี้คุณใช้บัญชีของตัวเองอยู่ ไม่ได้เป็นพนักงานร้านไหนครับ');
+        await db.leaveShop(identityId);
+        return replyText(ev.replyToken, 'ออกจากร้านแล้วครับ กลับมาใช้บัญชีของตัวเองตามเดิม');
+      }
+      if (['พนักงาน', 'ลูกน้อง', 'ทีมงาน', 'ดูทีม'].some(k => raw.includes(k))) {
+        if (isStaff) return replyText(ev.replyToken, 'คุณกำลังช่วยจดให้ร้าน (บัญชีของเจ้าของร้าน) อยู่ครับ 👍\nถ้าจะกลับไปใช้บัญชีตัวเองพิมพ์ "ออกจากร้าน"');
+        const members = await db.listShopMembers(identityId);
+        if (!members.length)
+          return replyText(ev.replyToken, 'ยังไม่มีพนักงานในร้านครับ\nพิมพ์ "เพิ่มพนักงาน" เพื่อสร้างรหัสเชิญ');
+        const code = await db.ensureInvite(identityId);
+        const list = members.map((m, i) => `${i + 1}. ${m.name || '(ไม่มีชื่อ)'}`).join('\n');
+        return replyText(ev.replyToken, `พนักงานในร้าน (${members.length} คน) 👥\n${list}\n\nรหัสเชิญเพิ่ม: ${code}`);
+      }
 
       if (['ปิดสรุป', 'ปิดแจ้งเตือน', 'ปิดเตือน'].some(k => raw.includes(k))) {
         await db.setDailySummary(userId, false);
@@ -620,6 +656,32 @@ app.get('/admin/set-tier', async (req, res) => {
   }
 });
 
+// เฟส 19: หน้า Admin (กดอัปเกรด Pro ได้ด้วยปุ่ม)
+function adminKeyOk(req) {
+  const key = process.env.ADMIN_KEY;
+  return key && (req.query.key === key || (req.body && req.body.key === key) || req.get('x-admin-key') === key);
+}
+app.get('/admin', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
+app.get('/admin/api/users', async (req, res) => {
+  if (!process.env.ADMIN_KEY) return res.status(404).json({ error: 'ตั้ง ADMIN_KEY ก่อน' });
+  if (!adminKeyOk(req)) return res.status(403).json({ error: 'คีย์ไม่ถูกต้อง' });
+  try { res.json({ users: await db.listUsersAdmin(bkkDate()) }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/admin/api/set-tier', express.json(), async (req, res) => {
+  if (!process.env.ADMIN_KEY) return res.status(404).json({ error: 'ตั้ง ADMIN_KEY ก่อน' });
+  if (!adminKeyOk(req)) return res.status(403).json({ error: 'คีย์ไม่ถูกต้อง' });
+  const u = (req.body || {}).user;
+  if (!u) return res.status(400).json({ error: 'missing user' });
+  const tier = req.body.tier === 'pro' ? 'pro' : 'free';
+  const until = tier === 'pro' ? bkkDaysAgo(-Math.max(1, +req.body.days || 30)) : null;
+  try {
+    await db.upsertUser(u, null);
+    await db.setMembership(u, tier, until);
+    res.json({ ok: true, tier, until });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // เฟส 10: ดาวน์โหลดรายงาน Excel (ตรวจโทเคนที่เซ็นไว้)
 app.get('/export.xlsx', async (req, res) => {
   try {
@@ -660,8 +722,10 @@ async function liffAuth(req, res, next) {
     });
     if (!r.ok) return res.status(401).json({ error: 'invalid token' });
     const profile = await r.json();
-    req.userId = profile.userId;
+    req.identityId = profile.userId;
     req.displayName = profile.displayName;
+    await db.upsertUser(profile.userId, profile.displayName);
+    req.userId = await db.accountOf(profile.userId); // บัญชีข้อมูลร้าน
     next();
   } catch (e) {
     console.error('[liffAuth]', e.message);
@@ -672,7 +736,7 @@ async function liffAuth(req, res, next) {
 app.use(['/api/menus', '/api/stats', '/api/transactions', '/api/goals', '/api/cost-compare', '/api/settings', '/api/export-link', '/api/recurring'], express.json(), liffAuth);
 
 app.get('/api/menus', async (req, res) => {
-  await db.upsertUser(req.userId, req.displayName);
+  await db.upsertUser(req.identityId, req.displayName);
   res.json(await db.listMenus(req.userId));
 });
 
@@ -731,7 +795,7 @@ app.put('/api/transactions/:id', async (req, res) => {
 
 // ---- เฟส 8: เป้ายอดขาย ----
 app.get('/api/goals', async (req, res) => {
-  await db.upsertUser(req.userId, req.displayName);
+  await db.upsertUser(req.identityId, req.displayName);
   const today = bkkDate();
   const [g, day, month] = await Promise.all([
     db.getGoals(req.userId), db.dayTotals(req.userId, today), db.monthTotals(req.userId, today.slice(0, 7)),

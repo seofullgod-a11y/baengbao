@@ -59,6 +59,13 @@ async function init() {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS cash_float NUMERIC(12,2) DEFAULT 0;`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS tier TEXT DEFAULT 'free';`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS tier_until DATE;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS account_id TEXT;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS invite_code TEXT;`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite ON users (invite_code) WHERE invite_code IS NOT NULL;`);
+  // เฟส 20: ระบบร้าน/พนักงาน (ใช้บัญชีข้อมูลร่วมกัน)
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS account_id TEXT;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS invite_code TEXT;`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite ON users (invite_code) WHERE invite_code IS NOT NULL;`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS bot_state (
       k TEXT PRIMARY KEY,
@@ -153,6 +160,54 @@ async function usageToday(lineUserId, dateStr) {
     [lineUserId, dateStr]
   );
   return rows[0] ? +rows[0].n : 0;
+}
+
+// เฟส 20: เพิ่มพนักงาน (แชร์บัญชีร้าน)
+// บัญชีข้อมูลของผู้ใช้คนนี้ = account_id (ถ้าเป็นพนักงาน) หรือ line_user_id ของตัวเอง (ถ้าเป็นเจ้าของ)
+async function accountOf(lineUserId) {
+  const { rows } = await pool.query(`SELECT account_id FROM users WHERE line_user_id=$1`, [lineUserId]);
+  return (rows[0] && rows[0].account_id) ? rows[0].account_id : lineUserId;
+}
+function genCode() {
+  const ch = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // ตัด 0/O/1/I ออกกันสับสน
+  let s = ''; for (let i = 0; i < 6; i++) s += ch[Math.floor(Math.random() * ch.length)];
+  return s;
+}
+async function ensureInvite(ownerId) {
+  const { rows } = await pool.query(`SELECT invite_code FROM users WHERE line_user_id=$1`, [ownerId]);
+  if (rows[0] && rows[0].invite_code) return rows[0].invite_code;
+  for (let i = 0; i < 6; i++) {
+    const code = genCode();
+    try {
+      await pool.query(`UPDATE users SET invite_code=$2 WHERE line_user_id=$1`, [ownerId, code]);
+      return code;
+    } catch (e) { if (i === 5) throw e; } // ชนกัน (หายาก) ลองใหม่
+  }
+}
+async function findByInvite(code) {
+  const { rows } = await pool.query(
+    `SELECT line_user_id, account_id FROM users WHERE invite_code=$1`, [String(code || '').toUpperCase()]
+  );
+  if (!rows[0]) return null;
+  if (rows[0].account_id) return null;      // เจ้าของต้องไม่ใช่พนักงานของใคร (กันซ้อนชั้น)
+  return rows[0].line_user_id;
+}
+async function joinShop(staffId, ownerId) {
+  await pool.query(`UPDATE users SET account_id=$2 WHERE line_user_id=$1`, [staffId, ownerId]);
+}
+async function leaveShop(staffId) {
+  await pool.query(`UPDATE users SET account_id=NULL WHERE line_user_id=$1`, [staffId]);
+}
+async function listShopMembers(ownerId) {
+  const { rows } = await pool.query(
+    `SELECT line_user_id, display_name FROM users WHERE account_id=$1 ORDER BY created_at ASC`, [ownerId]
+  );
+  return rows.map(r => ({ userId: r.line_user_id, name: r.display_name || '' }));
+}
+// นับพนักงานของเจ้าของ (ไว้กันเจ้าของไปเป็นพนักงานร้านอื่น)
+async function countMembers(ownerId) {
+  const { rows } = await pool.query(`SELECT COUNT(*) AS c FROM users WHERE account_id=$1`, [ownerId]);
+  return +rows[0].c;
 }
 
 async function getDailySummary(lineUserId) {
@@ -413,6 +468,26 @@ async function recentTxns(lineUserId, limit = 20) {
   }));
 }
 
+// เฟส 19: รายชื่อผู้ใช้สำหรับหน้า admin (พร้อมยอดใช้งาน)
+async function listUsersAdmin(today) {
+  const { rows } = await pool.query(
+    `SELECT u.line_user_id, u.display_name, COALESCE(u.tier,'free') AS tier, u.tier_until::text AS until,
+            u.created_at::date::text AS joined,
+            (SELECT COUNT(*) FROM transactions t WHERE t.line_user_id=u.line_user_id) AS txns,
+            (SELECT MAX(t.txn_date)::text FROM transactions t WHERE t.line_user_id=u.line_user_id) AS last_txn,
+            COALESCE((SELECT ai_calls FROM usage_daily ud WHERE ud.line_user_id=u.line_user_id AND ud.usage_date=$1),0) AS ai_today
+       FROM users u
+      ORDER BY u.created_at DESC NULLS LAST
+      LIMIT 500`,
+    [today]
+  );
+  return rows.map(r => ({
+    userId: r.line_user_id, name: r.display_name || '', tier: r.tier, until: r.until,
+    joined: r.joined, txns: +r.txns, lastTxn: r.last_txn, aiToday: +r.ai_today,
+    effective: (r.tier === 'pro' && (!r.until || r.until >= today)) ? 'pro' : 'free',
+  }));
+}
+
 async function deleteTxn(lineUserId, id) {
   const { rowCount } = await pool.query(
     `DELETE FROM transactions WHERE id=$1 AND line_user_id=$2`, [id, lineUserId]
@@ -448,6 +523,7 @@ module.exports = {
   bumpUsage, setDailySummary, activeUsersForDaily, usersToRemind, getState, setState,
   setGoal, getGoals, getDailySummary, categoryCompare, txnsForMonth,
   setCashFloat, getCashFloat, cashTotalsForDay, recurringMonthlyTotal, incomeSplitForMonth,
-  getMembership, setMembership, usageToday,
+  getMembership, setMembership, usageToday, listUsersAdmin,
+  accountOf, ensureInvite, findByInvite, joinShop, leaveShop, listShopMembers, countMembers,
   createRecurring, listRecurring, deleteRecurring, toggleRecurring, recurringToRun, markRecurringRun,
 };

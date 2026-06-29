@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>แบ่งเบา — Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{--blue:#1f6bff;--blue-deep:#0b49c9;--green:#00a86b;--gold:#c8920a;--ink:#0a1f44;--soft:#67789a;--faint:#9aa9c2;--border:#e3ebf9;--bg:#eef3fb}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"IBM Plex Sans Thai",system-ui,sans-serif;background:var(--bg);color:var(--ink);padding:18px}
+  .wrap{max-width:1000px;margin:0 auto}
+  h1{font-family:"Kanit";font-weight:700;font-size:22px;display:flex;align-items:center;gap:10px}
+  h1 .dot{width:30px;height:30px;border-radius:9px;background:linear-gradient(150deg,#4d8dff,var(--blue));display:grid;place-items:center;color:#fff;font-size:16px}
+  .sub{color:var(--soft);font-size:13.5px;margin:4px 0 18px}
+  .gate{background:#fff;border:1px solid var(--border);border-radius:16px;padding:22px;max-width:420px;margin:40px auto;text-align:center}
+  .gate h2{font-family:"Kanit";font-weight:600;font-size:17px;margin-bottom:6px}
+  .gate p{color:var(--soft);font-size:13px;margin-bottom:14px}
+  .gate input{width:100%;border:1.5px solid var(--border);border-radius:10px;padding:12px;font-size:15px;font-family:inherit;margin-bottom:10px}
+  .btn{border:none;border-radius:10px;padding:11px 16px;font-family:"Kanit";font-weight:600;font-size:14px;cursor:pointer;background:var(--blue);color:#fff}
+  .btn:disabled{opacity:.5;cursor:default}
+  .bar{display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+  .search{flex:1;min-width:180px;border:1.5px solid var(--border);border-radius:10px;padding:10px 13px;font-size:14px;font-family:inherit}
+  .stat{background:#fff;border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:13px;color:var(--soft)}
+  .stat b{color:var(--ink);font-family:"Kanit";font-size:17px;display:block}
+  .card{background:#fff;border:1px solid var(--border);border-radius:16px;overflow:hidden}
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:12px 14px;text-align:left;font-size:13.5px;border-bottom:1px solid var(--border);vertical-align:middle}
+  th{background:#f7faff;color:var(--soft);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.02em}
+  tr:last-child td{border-bottom:none}
+  .uid{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--faint)}
+  .nm{font-weight:600}
+  .badge{display:inline-block;font-family:"Kanit";font-weight:700;font-size:11px;padding:3px 11px;border-radius:12px}
+  .badge.pro{background:var(--gold);color:#fff}
+  .badge.free{background:#eef3fc;color:var(--soft)}
+  .acts{display:flex;gap:6px;flex-wrap:wrap}
+  .mini{border:none;border-radius:8px;padding:7px 11px;font-family:"Kanit";font-weight:600;font-size:12.5px;cursor:pointer}
+  .mini.pro{background:#fff4dc;color:var(--gold)}
+  .mini.pro:hover{background:var(--gold);color:#fff}
+  .mini.free{background:#f1f4f9;color:var(--soft)}
+  .mini.free:hover{background:#e5484d;color:#fff}
+  .muted{color:var(--faint);font-size:12px}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:12px 20px;border-radius:11px;font-size:14px;transition:.25s;z-index:9}
+  .toast.show{transform:translateX(-50%) translateY(0)}
+  .empty{padding:40px;text-align:center;color:var(--faint)}
+  @media(max-width:640px){th.hide,td.hide{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1><span class="dot">บ</span> แบ่งเบา Admin</h1>
+  <div class="sub">จัดการสมาชิก Pro</div>
+
+  <div id="gate" class="gate">
+    <h2>เข้าสู่ระบบแอดมิน</h2>
+    <p>ใส่ ADMIN_KEY (ค่าเดียวกับที่ตั้งใน Railway)</p>
+    <input id="keyInput" type="password" placeholder="ADMIN_KEY" />
+    <button class="btn" id="enterBtn" style="width:100%">เข้าสู่ระบบ</button>
+    <p id="gateErr" style="color:#e5484d;margin-top:10px;display:none"></p>
+  </div>
+
+  <div id="panel" style="display:none">
+    <div class="bar">
+      <input class="search" id="search" placeholder="ค้นหาชื่อ หรือ user id..." />
+      <div class="stat">ทั้งหมด <b id="cTotal">–</b></div>
+      <div class="stat">Pro <b id="cPro" style="color:var(--gold)">–</b></div>
+      <button class="btn" id="refreshBtn" style="background:#eef3fc;color:var(--blue)">รีเฟรช</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr>
+          <th>ผู้ใช้</th><th>แพ็กเกจ</th><th class="hide">AI วันนี้</th><th class="hide">รายการ</th><th class="hide">ใช้ล่าสุด</th><th>จัดการ</th>
+        </tr></thead>
+        <tbody id="rows"><tr><td colspan="6" class="empty">กำลังโหลด...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+  const $=id=>document.getElementById(id);
+  let KEY='', all=[];
+  const toast=m=>{const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2200);};
+
+  async function api(path,opts){
+    const r=await fetch(path,{...opts,headers:{'Content-Type':'application/json','x-admin-key':KEY,...(opts&&opts.headers)}});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(d.error||('error '+r.status));
+    return d;
+  }
+  function esc(s){return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+  async function load(){
+    try{
+      const d=await api('/admin/api/users');
+      all=d.users||[];
+      $('cTotal').textContent=all.length;
+      $('cPro').textContent=all.filter(u=>u.effective==='pro').length;
+      render();
+    }catch(e){ toast(e.message); }
+  }
+  function render(){
+    const q=$('search').value.trim().toLowerCase();
+    const list=all.filter(u=>!q||(u.name||'').toLowerCase().includes(q)||u.userId.toLowerCase().includes(q));
+    if(!list.length){$('rows').innerHTML='<tr><td colspan="6" class="empty">ไม่พบผู้ใช้</td></tr>';return;}
+    $('rows').innerHTML=list.map(u=>{
+      const pro=u.effective==='pro';
+      return `<tr>
+        <td><div class="nm">${esc(u.name)||'(ไม่มีชื่อ)'}</div><div class="uid">${esc(u.userId)}</div></td>
+        <td><span class="badge ${pro?'pro':'free'}">${pro?'PRO':'FREE'}</span>${pro&&u.until?`<div class="muted">ถึง ${u.until}</div>`:''}</td>
+        <td class="hide">${u.aiToday}</td>
+        <td class="hide">${u.txns}</td>
+        <td class="hide muted">${u.lastTxn||'–'}</td>
+        <td><div class="acts">
+          <button class="mini pro" onclick="setTier('${u.userId}','pro',30)">Pro 30 วัน</button>
+          <button class="mini pro" onclick="setTier('${u.userId}','pro',90)">90 วัน</button>
+          ${pro?`<button class="mini free" onclick="setTier('${u.userId}','free',0)">ปลด</button>`:''}
+        </div></td>
+      </tr>`;
+    }).join('');
+  }
+  window.setTier=async function(user,tier,days){
+    try{
+      await api('/admin/api/set-tier',{method:'POST',body:JSON.stringify({user,tier,days})});
+      toast(tier==='pro'?`อัปเกรด Pro ${days} วันแล้ว`:'ปลด Pro แล้ว');
+      await load();
+    }catch(e){ toast(e.message); }
+  };
+
+  function enter(){
+    KEY=$('keyInput').value.trim();
+    if(!KEY)return;
+    $('enterBtn').disabled=true;
+    api('/admin/api/users').then(()=>{
+      sessionStorage.setItem('bb_admin_key',KEY);
+      $('gate').style.display='none';$('panel').style.display='block';
+      $('cTotal').textContent=''; load();
+    }).catch(e=>{
+      $('gateErr').textContent=e.message;$('gateErr').style.display='block';$('enterBtn').disabled=false;
+    });
+  }
+  $('enterBtn').addEventListener('click',enter);
+  $('keyInput').addEventListener('keydown',e=>{if(e.key==='Enter')enter();});
+  $('search').addEventListener('input',render);
+  $('refreshBtn').addEventListener('click',load);
+
+  // เผื่อมี ?key= ใน url หรือเคยเข้าแล้ว
+  const urlKey=new URLSearchParams(location.search).get('key')||sessionStorage.getItem('bb_admin_key');
+  if(urlKey){ $('keyInput').value=urlKey; enter(); }
+</script>
+</body>
+</html>
