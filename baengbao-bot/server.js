@@ -136,6 +136,15 @@ async function getImageBase64(messageId) {
   return { base64: buf.toString('base64'), mediaType };
 }
 
+// โหลดไฟล์สื่อจากไลน์เป็น Buffer (ใช้กับเสียง)
+async function getMessageContent(messageId) {
+  const res = await fetch(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
+    headers: { Authorization: `Bearer ${CHANNEL_TOKEN}` },
+  });
+  if (!res.ok) throw new Error('content fetch failed ' + res.status);
+  return { buf: Buffer.from(await res.arrayBuffer()), mediaType: res.headers.get('content-type') || 'audio/m4a' };
+}
+
 function summaryLine(t) {
   return `รายรับ ${baht(t.income)} / รายจ่าย ${baht(t.expense)}\nกำไรสุทธิ ${t.profit >= 0 ? '+' : ''}${baht(t.profit)} ฿`;
 }
@@ -254,7 +263,28 @@ async function confirmAndSummary(userId, parsed, source) {
     } catch (e) { console.error('[goal]', e.message); }
   }
 
+  // เฟส 27: เชียร์สตรีค (เฉพาะรายการแรกของวัน + ครบหลักสำคัญ)
+  if (day.count === 1) {
+    try {
+      const streak = await db.currentStreak(userId, date);
+      const msg = streakMilestone(streak);
+      if (msg) messages.push({ type: 'text', text: msg });
+    } catch (e) { console.error('[streak]', e.message); }
+  }
+
   return { messages };
+}
+
+function streakMilestone(n) {
+  const m = {
+    3: 'จดติดต่อกัน 3 วันแล้ว เก่งมากครับ 🔥',
+    7: 'ครบ 7 วันติด! เริ่มเป็นนิสัยที่ดีแล้ว 🔥🔥',
+    14: '2 สัปดาห์ติดต่อกัน สุดยอดไปเลยครับ 🔥',
+    30: 'จดครบ 30 วันติด! เป็นเจ้าของร้านมือโปรแล้ว 🏆',
+    60: '60 วันติดต่อกัน! วินัยขั้นเทพ 🏆',
+    100: '100 วันติด! คุณคือสุดยอดแม่ค้า/พ่อค้า 🏆🎉',
+  };
+  return m[n] || null;
 }
 
 // บันทึกยอดจากหน้าสรุปเดลิเวอรี่ (Grab/LineMan/Shopee)
@@ -333,6 +363,22 @@ async function handleEvent(ev) {
           await db.setOnboard(identityId, 0);
           return replyText(ev.replyToken, 'ได้เลยครับ ข้ามการสอนแล้ว 👌\nอยากดูวิธีจด กดปุ่ม ✏️ วิธีจด ข้างล่างได้ตลอดนะครับ');
         }
+      }
+
+      if (['ลบล่าสุด', 'ยกเลิกล่าสุด', 'ลบรายการล่าสุด', 'ลบอันล่าสุด'].some(k => raw.includes(k))) {
+        const last = (await db.recentTxns(userId, 1))[0];
+        if (!last) return replyText(ev.replyToken, 'ยังไม่มีรายการให้ลบครับ');
+        await db.deleteTxn(userId, last.id);
+        const sign = last.type === 'income' ? 'รายรับ +' : 'รายจ่าย −';
+        const desc = last.note || last.category || '';
+        return replyText(ev.replyToken, `ลบรายการล่าสุดแล้วครับ ✅\n${sign}${baht(last.amount)} ฿${desc ? '  (' + desc + ')' : ''}\n\nถ้าลบผิด จดเข้าไปใหม่ได้เลยครับ`);
+      }
+      if (['แก้ล่าสุด', 'แก้รายการล่าสุด', 'แก้อันล่าสุด'].some(k => raw.includes(k))) {
+        const last = (await db.recentTxns(userId, 1))[0];
+        if (!last) return replyText(ev.replyToken, 'ยังไม่มีรายการให้แก้ครับ');
+        const u = liffUrl();
+        const sign = last.type === 'income' ? 'รายรับ +' : 'รายจ่าย −';
+        return replyText(ev.replyToken, `รายการล่าสุดคือ\n${sign}${baht(last.amount)} ฿${last.note ? '  (' + last.note + ')' : ''}\n\nแก้ได้ในแอป แตะรูปดินสอที่รายการนั้น${u ? '\n' + u : ''}\nหรือพิมพ์  ลบล่าสุด  แล้วจดใหม่ก็ได้ครับ`);
       }
 
       if (['วิธีจด', 'จดยังไง', 'จดยังไ', 'สอนจด', 'จดอย่างไร', 'จดไง'].some(k => raw.includes(k))) {
@@ -620,6 +666,32 @@ async function handleEvent(ev) {
     } catch (e) {
       console.error('[parseImage]', e.message);
       return replyText(ev.replyToken, 'ขอโทษครับ อ่านรูปไม่สำเร็จ ลองส่งใหม่อีกครั้งนะ');
+    }
+  }
+
+  // ----- เสียงพูด (พูดแทนพิมพ์) -----
+  if (ev.message.type === 'audio') {
+    try {
+      if (!process.env.OPENAI_API_KEY)
+        return replyText(ev.replyToken, 'ตอนนี้ยังฟังเสียงไม่ได้ครับ 🙏 พิมพ์มาได้เลย เช่น  ขายข้าว 50');
+      { const q = await overQuota(userId); if (q.over) return replyText(ev.replyToken, quotaMessage(q)); }
+      const { buf, mediaType } = await getMessageContent(ev.message.id);
+      const tr = await ai.transcribeThai(buf, mediaType);
+      if (!tr.ok || !tr.text)
+        return replyText(ev.replyToken, 'ขอโทษครับ ฟังไม่ค่อยชัด 🙏 ลองพูดอีกครั้งช้า ๆ หรือพิมพ์มาก็ได้ เช่น  ขายข้าว 50');
+      const heard = { type: 'text', text: `🎤 ได้ยินว่า: ${tr.text}` };
+      const parsed = await ai.parseText(tr.text);
+      if (!parsed.is_transaction || parsed.amount == null)
+        return lineReply(ev.replyToken, [heard, { type: 'text',
+          text: 'ยังจับเป็นรายการไม่ได้ครับ 🙏\nลองพูดให้มีของ + ยอดเงิน เช่น  ขายข้าวกะเพรา 50  หรือ  ซื้อหมู 800' }]);
+      const r = await confirmAndSummary(userId, parsed, 'voice');
+      const nudge = await onboardNudge(identityId);
+      const msgs = [heard, ...r.messages];
+      if (nudge) msgs.push({ type: 'text', text: nudge });
+      return lineReply(ev.replyToken, msgs);
+    } catch (e) {
+      console.error('[audio]', e.message);
+      return replyText(ev.replyToken, 'ขอโทษครับ ฟังเสียงไม่สำเร็จ ลองอีกครั้ง หรือพิมพ์มาก็ได้ครับ');
     }
   }
 }

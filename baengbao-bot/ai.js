@@ -87,4 +87,31 @@ async function parseImage(base64, mediaType) {
   return safeJSON(text);
 }
 
-module.exports = { parseText, parseImage };
+module.exports = { parseText, parseImage, transcribeThai };
+
+// ถอดเสียงพูดเป็นข้อความภาษาไทย (ใช้ OpenAI Whisper — รองรับไทยดี)
+async function transcribeThai(buffer, mimeType = 'audio/m4a') {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) return { ok: false, reason: 'no_key', text: '' };
+  try {
+    const ext = /mp4|m4a|aac/.test(mimeType) ? 'm4a'
+      : /mpeg|mp3/.test(mimeType) ? 'mp3'
+      : /wav/.test(mimeType) ? 'wav'
+      : /ogg|opus/.test(mimeType) ? 'ogg' : 'm4a';
+    const form = new FormData();
+    form.append('file', new Blob([buffer], { type: mimeType }), `audio.${ext}`);
+    form.append('model', process.env.WHISPER_MODEL || 'whisper-1');
+    form.append('language', 'th');
+    const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}` },
+      body: form,
+    });
+    if (!res.ok) { console.error('[whisper]', res.status, await res.text()); return { ok: false, reason: 'api', text: '' }; }
+    const data = await res.json();
+    return { ok: true, text: (data.text || '').trim() };
+  } catch (e) {
+    console.error('[whisper]', e.message);
+    return { ok: false, reason: 'err', text: '' };
+  }
+}

@@ -464,6 +464,22 @@ async function txnsForMonth(lineUserId, ym) {
   }));
 }
 
+// เฟส 27: สตรีค (จดติดต่อกันกี่วัน) — นับวันที่มีรายการต่อเนื่องถึงวันนี้/เมื่อวาน
+async function currentStreak(lineUserId, today) {
+  const { rows } = await pool.query(
+    `SELECT DISTINCT txn_date::text AS d FROM transactions WHERE line_user_id=$1 ORDER BY d DESC LIMIT 400`,
+    [lineUserId]
+  );
+  const set = new Set(rows.map(r => r.d));
+  if (!set.size) return 0;
+  const minus = (ds) => { const dt = new Date(ds + 'T00:00:00Z'); dt.setUTCDate(dt.getUTCDate() - 1); return dt.toISOString().slice(0, 10); };
+  let cur = today;
+  if (!set.has(cur)) cur = minus(cur); // ยังไม่ขาด ถ้าวันนี้ยังไม่จด ให้เริ่มนับจากเมื่อวาน
+  let streak = 0;
+  while (set.has(cur)) { streak++; cur = minus(cur); }
+  return streak;
+}
+
 async function recentTxns(lineUserId, limit = 20) {
   const { rows } = await pool.query(
     `SELECT id, type, amount, category, note, txn_date::text AS d, created_at
@@ -527,7 +543,7 @@ async function bumpUsage(lineUserId, dateStr) {
 module.exports = {
   pool, init, upsertUser, insertTxn, dayTotals, monthTotals, rangeTotals,
   listMenus, createMenu, updateMenu, deleteMenu,
-  dailySeries, categoryBreakdown, recentTxns, deleteTxn, updateTxn,
+  dailySeries, categoryBreakdown, recentTxns, deleteTxn, updateTxn, currentStreak,
   bumpUsage, setDailySummary, activeUsersForDaily, usersToRemind, getState, setState,
   setGoal, getGoals, getDailySummary, categoryCompare, txnsForMonth,
   setCashFloat, getCashFloat, cashTotalsForDay, recurringMonthlyTotal, incomeSplitForMonth,
