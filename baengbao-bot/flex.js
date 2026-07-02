@@ -644,10 +644,19 @@ function helpCarousel(link) {
     cmdLine('เติม / ใช้', 'เติมหมู 5 · ใช้หมู 2'),
     cmdLine('ต้องซื้อ', 'ดูรายการของใกล้หมด'),
     sep('lg'),
+    secHead('สูตรอาหาร (ตัดสต๊อกอัตโนมัติ)'),
+    cmdLine('ต้นทุน', 'ตั้งราคาทุนวัตถุดิบ เช่น ต้นทุน หมู 120'),
+    cmdLine('สูตร', 'สูตร กะเพราหมู = หมู 0.1 กก, ไข่ 1 ฟอง'),
+    sep('lg'),
     secHead('ลูกหนี้ & เจ้าหนี้'),
     cmdLine('ลูกหนี้', 'ดู/เพิ่มบิลเชื่อ เช่น ลูกหนี้ ป้าแดง 120'),
     cmdLine('เจ้าหนี้', 'ดู/เพิ่มค้างจ่าย เช่น เจ้าหนี้ เจ๊ผัก 2000'),
     cmdLine('คงเหลือ', 'ดูสุขภาพร้าน + เงินคงเหลือจริง'),
+    sep('lg'),
+    secHead('พนักงาน'),
+    cmdLine('พนักงาน', 'เพิ่ม/ดู เช่น พนักงาน สมชาย 350'),
+    cmdLine('ลงเวลา / เบิก', 'ลงเวลา สมชาย · เบิก สมชาย 500'),
+    cmdLine('จ่ายค่าแรง', 'จ่ายค่าแรง สมชาย 2000'),
     sep('lg'),
     secHead('อื่น ๆ'),
     cmdLine('ลบล่าสุด', 'ลบรายการที่จดผิด'),
@@ -830,10 +839,100 @@ function lowStockCard(rows, link) {
   };
 }
 
+// ===== เฟส 31: สูตรอาหาร =====
+function recipeCard(menuName, items, cost, link) {
+  const body = [
+    sol('ใช้วัตถุดิบต่อ 1 จาน', C.soft, { size: 'xs' }),
+    ...items.map(it => statRow(it.ingredient, `${baht(it.qty)}${it.unit ? ' ' + it.unit : ''}`, C.ink)),
+    sep('md'),
+  ];
+  if (cost && cost.complete && cost.cost > 0) {
+    body.push(statRow('ต้นทุนวัตถุดิบ/จาน', `${baht(Math.round(cost.cost * 100) / 100)} ฿`, C.warn, true));
+  } else if (cost && cost.missing && cost.missing.length) {
+    body.push(sol(`ตั้งราคาทุนก่อนเพื่อคิดต้นทุน เช่น  ต้นทุน ${cost.missing[0]} 120`, C.blueDeep, { size: 'xs', wrap: true }));
+  }
+  body.push(sol('ขายเมนูนี้เมื่อไหร่ ระบบตัดสต๊อก + คิดต้นทุนให้อัตโนมัติ', C.soft, { size: 'xs', wrap: true, margin: 'md' }));
+  return {
+    altText: `สูตร ${menuName}`,
+    contents: bubble({ headerBox: header(menuName, 'สูตรอาหาร', C.blueDeep), bodyContents: body, footerButton: linkButton('เปิดแอปจัดการ', link) }),
+  };
+}
+
+function recipeListCard(recipes, link) {
+  let body;
+  if (!recipes.length) {
+    body = [
+      sol('ยังไม่มีสูตรอาหารครับ', C.soft, { size: 'sm' }),
+      sol('ตั้งได้เลย เช่น:', C.ink, { size: 'sm', margin: 'md' }),
+      sol('สูตร กะเพราหมู = หมู 0.1 กก, ไข่ 1 ฟอง, ข้าว 1 จาน', C.blueDeep, { size: 'sm', wrap: true }),
+    ];
+  } else {
+    body = recipes.slice(0, 14).map(r => statRow(r.menuName, `${r.items.length} วัตถุดิบ`, C.ink));
+    body.push(sol('ขายเมนูที่มีสูตร ระบบตัดสต๊อกให้อัตโนมัติ', C.soft, { size: 'xs', wrap: true, margin: 'md' }));
+  }
+  return {
+    altText: `สูตรอาหาร (${recipes.length} เมนู)`,
+    contents: bubble({ headerBox: header('สูตรอาหาร', `${recipes.length} เมนู`, C.blueDeep), bodyContents: body, footerButton: linkButton('เปิดแอปจัดการ', link) }),
+  };
+}
+
+// ===== เฟส 32: จัดการพนักงาน =====
+function staffAddedCard(s) {
+  const title = s.isNew ? 'เพิ่มพนักงานแล้ว' : 'อัปเดตค่าแรงแล้ว';
+  const body = [
+    statRow(s.name, `${baht(s.day_wage)} ฿/วัน`, C.ink, true),
+    sep('md'),
+    sol(`ลงเวลาได้เลย พิมพ์  ลงเวลา ${s.name}`, C.blueDeep, { size: 'sm', wrap: true }),
+  ];
+  return { altText: `${title} ${s.name}`, contents: bubble({ headerBox: header(title, 'พนักงาน', C.green), bodyContents: body }) };
+}
+
+function staffListCard(rows, link) {
+  let body;
+  if (!rows.length) {
+    body = [sol('ยังไม่มีพนักงานครับ', C.soft, { size: 'sm' }),
+      sol('เพิ่มได้เลย เช่น  พนักงาน สมชาย 350', C.blueDeep, { size: 'sm', wrap: true, margin: 'sm' })];
+  } else {
+    const totalOwed = rows.reduce((s, r) => s + r.owed, 0);
+    body = rows.slice(0, 12).map(r => statRow(`${r.name} (${baht(r.days)} วัน)`, `ค้าง ${baht(Math.round(r.owed))} ฿`, r.owed > 0 ? C.warn : C.green));
+    body.push(sep('md'));
+    body.push(statRow('ค้างจ่ายรวม', `${baht(Math.round(totalOwed))} ฿`, C.warn, true));
+    body.push(sol('ดูรายคน พิมพ์  พนักงาน ตามด้วยชื่อ', C.soft, { size: 'xs', wrap: true, margin: 'md' }));
+  }
+  return { altText: `พนักงาน (${rows.length} คน)`, contents: bubble({ headerBox: header('พนักงาน', `${rows.length} คน`, C.blueDeep), bodyContents: body, footerButton: linkButton('เปิดแอปจัดการ', link) }) };
+}
+
+function staffDetailCard(sum, link) {
+  const body = [
+    statRow('ค่าแรง', `${baht(sum.dayWage)} ฿/วัน`, C.ink),
+    statRow('ทำงาน', `${baht(sum.days)} วัน`, C.ink),
+    statRow('ค่าแรงรวม', `${baht(Math.round(sum.earned))} ฿`, C.green),
+    statRow('เบิกไปแล้ว', `−${baht(Math.round(sum.advance))} ฿`, C.warn),
+    statRow('จ่ายแล้ว', `−${baht(Math.round(sum.paid))} ฿`, C.warn),
+    sep('md'),
+    statRow('ค้างจ่าย', `${baht(Math.round(sum.owed))} ฿`, sum.owed > 0 ? C.danger : C.green, true),
+    sol(`ลงเวลา ${sum.name} · เบิก ${sum.name} 500 · จ่ายค่าแรง ${sum.name} 2000`, C.blueDeep, { size: 'xs', wrap: true, margin: 'md' }),
+  ];
+  return { altText: `${sum.name} ค้างจ่าย ${baht(Math.round(sum.owed))} ฿`, contents: bubble({ headerBox: header(sum.name, 'สรุปพนักงาน', C.blueDeep), bodyContents: body, footerButton: linkButton('เปิดแอปจัดการ', link) }) };
+}
+
+function staffPayCard(kind, name, amount, sum) {
+  const title = kind === 'advance' ? 'เบิกเงินแล้ว ✅' : 'จ่ายค่าแรงแล้ว ✅';
+  const body = [
+    statRow(name, `${baht(amount)} ฿`, C.warn, true),
+    statRow('ค้างจ่ายเหลือ', `${baht(Math.round(sum.owed))} ฿`, sum.owed > 0 ? C.ink : C.green),
+    sep('md'),
+    sol('บันทึกเป็นรายจ่าย (ค่าแรง) ให้แล้ว', C.soft, { size: 'xs' }),
+  ];
+  return { altText: `${title} ${name} ${baht(amount)} ฿`, contents: bubble({ headerBox: header(title, kind === 'advance' ? 'เบิกล่วงหน้า' : 'จ่ายค่าแรง', C.green), bodyContents: body }) };
+}
+
 module.exports = {
   confirmCard, summaryCard, deliveryCard, menuProfitCard, menuLinkCard, dailyPushCard,
   goalCard, goalReachedCard, costCompareCard, exportCard, weeklyCard, welcomeCarousel,
   breakEvenCard, cashCloseCard, plCard, membershipCard, helpCarousel, howToCard,
   debtAddedCard, debtSettledCard, debtListCard, healthCard,
   stockUpdatedCard, stockListCard, lowStockCard,
+  recipeCard, recipeListCard,
+  staffAddedCard, staffListCard, staffDetailCard, staffPayCard,
 };

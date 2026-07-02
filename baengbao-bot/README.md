@@ -642,3 +642,48 @@ push richmenu.png (binary) + richmenu.js แล้วเปิด /admin/setup-r
 - **สาเหตุ:** `pg-mem` (แพ็กเกจเทสต์) หลุดเข้าไปใน `dependencies` + `package-lock.json` ตอนรัน `npm install` ทดสอบ ทำให้ตอน Railway ติดตั้ง dependency tree มีปัญหา → build/boot ล่ม (โค้ดโปรดักชันไม่เคย require pg-mem)
 - **แก้:** เอา pg-mem ออกจาก package.json, ลบ package-lock.json ที่ปนเปื้อน (ให้ Railway `npm install` ใหม่สะอาด), เพิ่ม `process.on('unhandledRejection'/'uncaughtException')` กัน error จาก request เดียวทำให้เซิร์ฟเวอร์ล่มทั้งตัว
 - deps สุดท้าย: @anthropic-ai/sdk, exceljs, express, pg
+
+---
+
+# เฟส 31 — สูตรอาหาร → ตัดสต๊อกอัตโนมัติ + ต้นทุนจริง (คลื่นที่ 2)
+
+ผูกเมนูกับวัตถุดิบ พอขายเมนูนั้น ระบบตัดสต๊อก + คิดต้นทุนวัตถุดิบให้อัตโนมัติ
+
+## คำสั่ง
+- **ต้นทุน <วัตถุดิบ> <ราคา>** — ตั้งราคาทุนต่อหน่วย (เช่น ต้นทุน หมู 120 = 120 บาท/กก)
+- **สูตร <เมนู> = <ของ> <จำนวน> <หน่วย>, ...** — ตั้งสูตร (เช่น สูตร กะเพราหมู = หมู 0.1 กก, ไข่ 1 ฟอง, ข้าว 1 จาน)
+- **สูตร <เมนู>** — ดูสูตร + ต้นทุน/จาน
+- **สูตร** — ดูสูตรทั้งหมด
+- **ลบสูตร <เมนู>** — ลบสูตร
+
+## ตัดสต๊อกอัตโนมัติ
+- เมื่อบันทึกการขายที่มีเมนู (พิมพ์/พูด/ถ่ายบิล) ระบบจับคู่ชื่อเมนูกับสูตร (fuzzy: "ขายกะเพราหมู"→"กะเพราหมู")
+- ตัดวัตถุดิบตามจำนวนจานที่ขาย + เตือนถ้าใกล้หมด + แสดงต้นทุนวัตถุดิบ & กำไรขั้นต้น
+
+## เทคนิค
+- db: `stock_items.unit_cost` (ALTER ADD), ตาราง `recipes` + `recipe_items` · helpers setStockCost/setRecipe/getRecipe/listRecipes/deleteRecipe/recipeCost/applySaleToStock (findRecipe จับคู่ฝั่ง JS กัน pg-mem)
+- hook ใน confirmAndSummary: income+items → applySaleToStock ต่อรายการ แล้วส่งข้อความสรุปการตัดสต๊อก
+- flex: recipeCard/recipeListCard · เพิ่มคำสั่งในการ์ดช่วย
+- (ต่อยอด: จัดการสูตรใน mini app + จัดการพนักงาน)
+
+---
+
+# เฟส 32 — จัดการพนักงาน + จัดโครง Mini App ใหม่ + สูตรใน Mini App
+
+## จัดการพนักงาน (คลื่นที่ 2)
+คำสั่ง: **พนักงาน สมชาย 350** (เพิ่ม), **พนักงาน** (ดูทั้งหมด+ค้างจ่าย), **พนักงาน สมชาย** (สรุปรายคน), **ลงเวลา สมชาย [วัน]**, **เบิก สมชาย 500**, **จ่ายค่าแรง สมชาย 2000**, **ลบพนักงาน สมชาย**
+- เบิก/จ่ายค่าแรง บันทึกเป็นรายจ่าย (ค่าแรง) อัตโนมัติ
+- db: `staff` + `staff_logs` · helpers addStaff/listStaff/removeStaff/logStaff/staffSummary/staffAllSummary (คำนวณ JS)
+- owed = วันทำงาน×ค่าแรง − เบิก − จ่ายแล้ว
+- flex: staffAddedCard/staffListCard/staffDetailCard/staffPayCard
+
+## Mini App จัดโครงใหม่ (main tab + sub-tab)
+- 5 แท็บหลัก: **เมนู · เงิน · สต๊อก · ทีมงาน · ตั้งค่า**
+- แถบ sub-tab (กดสลับ): เงิน→[รายงาน/เป้าหมาย/ลูกหนี้-เจ้าหนี้] · สต๊อก→[วัตถุดิบ/สูตรอาหาร]
+- JS: NAV map + switchMain/switchTab (จำ sub ล่าสุดต่อ main), subtab bar สร้างอัตโนมัติ
+
+## สูตรอาหาร + พนักงาน ใน Mini App
+- แท็บสูตรอาหาร: ฟอร์มตั้งสูตร (ชื่อเมนู + เลือกวัตถุดิบจาก dropdown + จำนวน/หน่วย + เพิ่มหลายแถว), รายการสูตร + ต้นทุน/จาน, ลบได้
+- แท็บพนักงาน: ฟอร์มเพิ่ม, การ์ดค้างจ่ายรวม, การ์ดรายคน (ลงเวลา/เบิก/จ่าย/ลบ)
+- API: /api/recipes (+delete), /api/stock/cost, /api/staff (+log +remove)
+- แก้: qfmt แสดงจำนวนทศนิยม (0.1 กก, 4.7 กก) ไม่ถูกปัดเป็นจำนวนเต็ม

@@ -94,6 +94,49 @@ async function init() {
       updated_at TIMESTAMPTZ DEFAULT now()
     );
   `);
+  // เฟส 31: ต้นทุนต่อหน่วยของวัตถุดิบ (ไว้คิดต้นทุนจริงต่อจาน)
+  await pool.query(`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS unit_cost NUMERIC NOT NULL DEFAULT 0;`);
+  // เฟส 31: สูตรอาหาร (เมนู -> วัตถุดิบที่ใช้ต่อ 1 จาน) เพื่อตัดสต๊อก+คิดต้นทุนอัตโนมัติ
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS recipes (
+      id SERIAL PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      menu_name TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT now()
+    );
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS recipe_items (
+      id SERIAL PRIMARY KEY,
+      recipe_id INT NOT NULL,
+      ingredient TEXT NOT NULL,
+      qty NUMERIC NOT NULL DEFAULT 0,
+      unit TEXT DEFAULT ''
+    );
+  `);
+  // เฟส 32: จัดการพนักงาน (ค่าแรง/ลงเวลา/เบิกเงิน)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS staff (
+      id SERIAL PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      day_wage NUMERIC NOT NULL DEFAULT 0,
+      active INT NOT NULL DEFAULT 1,
+      created_at TIMESTAMPTZ DEFAULT now()
+    );
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS staff_logs (
+      id SERIAL PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      staff_id INT NOT NULL,
+      kind TEXT NOT NULL,          -- 'work' (ลงเวลา) | 'advance' (เบิก) | 'pay' (จ่ายค่าแรง)
+      amount NUMERIC NOT NULL DEFAULT 0, -- work: จำนวนวัน, advance/pay: บาท
+      note TEXT,
+      log_date DATE,
+      created_at TIMESTAMPTZ DEFAULT now()
+    );
+  `);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS bot_state (
       k TEXT PRIMARY KEY,
@@ -325,6 +368,156 @@ async function removeStock(accountId, name) {
   if (!ex) return { found: false };
   await pool.query(`DELETE FROM stock_items WHERE id=$1`, [ex.id]);
   return { found: true, name: ex.name };
+}
+// เฟส 31: ตั้งต้นทุนต่อหน่วยของวัตถุดิบ
+async function setStockCost(accountId, name, unitCost) {
+  const ex = await findStock(accountId, name);
+  if (!ex) return { found: false };
+  await pool.query(`UPDATE stock_items SET unit_cost=$2, updated_at=now() WHERE id=$1`, [ex.id, Number(unitCost)]);
+  return { found: true, item: withLow({ ...ex, unit_cost: unitCost }) };
+}
+
+// ===== เฟส 31: สูตรอาหาร =====
+async function findRecipe(accountId, menuName) {
+  menuName = (menuName || '').trim();
+  if (!menuName) return null;
+  const { rows } = await pool.query(`SELECT * FROM recipes WHERE account_id=$1`, [accountId]);
+  const lm = menuName.toLowerCase();
+  const exact = rows.find(r => (r.menu_name || '').toLowerCase() === lm);
+  if (exact) return exact;
+  // จับคู่แบบ contains (เผื่อ "ขายกะเพราหมู" -> "กะเพราหมู") เลือกชื่อที่ยาวสุด (ตรงสุด)
+  const cands = rows
+    .filter(r => { const rn = (r.menu_name || '').toLowerCase(); return rn && (lm.includes(rn) || rn.includes(lm)); })
+    .sort((a, b) => (b.menu_name || '').length - (a.menu_name || '').length);
+  return cands[0] || null;
+}
+async function getRecipeItems(recipeId) {
+  const { rows } = await pool.query(`SELECT ingredient, qty, unit FROM recipe_items WHERE recipe_id=$1 ORDER BY id ASC`, [recipeId]);
+  return rows.map(r => ({ ingredient: r.ingredient, qty: Number(r.qty), unit: r.unit || '' }));
+}
+async function setRecipe(accountId, menuName, items) {
+  menuName = (menuName || '').trim();
+  let rec = (await pool.query(`SELECT * FROM recipes WHERE account_id=$1 AND lower(menu_name)=lower($2) LIMIT 1`, [accountId, menuName])).rows[0];
+  if (!rec) {
+    rec = (await pool.query(`INSERT INTO recipes (account_id, menu_name) VALUES ($1,$2) RETURNING *`, [accountId, menuName])).rows[0];
+  } else {
+    await pool.query(`DELETE FROM recipe_items WHERE recipe_id=$1`, [rec.id]);
+  }
+  for (const it of items) {
+    await pool.query(`INSERT INTO recipe_items (recipe_id, ingredient, qty, unit) VALUES ($1,$2,$3,$4)`,
+      [rec.id, it.ingredient.trim(), Number(it.qty) || 0, (it.unit || '').trim()]);
+  }
+  return { menuName: rec.menu_name, items };
+}
+async function listRecipes(accountId) {
+  const { rows } = await pool.query(`SELECT * FROM recipes WHERE account_id=$1 ORDER BY menu_name ASC`, [accountId]);
+  const out = [];
+  for (const r of rows) out.push({ menuName: r.menu_name, items: await getRecipeItems(r.id) });
+  return out;
+}
+async function getRecipe(accountId, menuName) {
+  const rec = await findRecipe(accountId, menuName);
+  if (!rec) return null;
+  return { menuName: rec.menu_name, items: await getRecipeItems(rec.id) };
+}
+async function deleteRecipe(accountId, menuName) {
+  const rec = (await pool.query(`SELECT * FROM recipes WHERE account_id=$1 AND lower(menu_name)=lower($2) LIMIT 1`, [accountId, (menuName || '').trim()])).rows[0];
+  if (!rec) return { found: false };
+  await pool.query(`DELETE FROM recipe_items WHERE recipe_id=$1`, [rec.id]);
+  await pool.query(`DELETE FROM recipes WHERE id=$1`, [rec.id]);
+  return { found: true, menuName: rec.menu_name };
+}
+// ต้นทุนวัตถุดิบต่อ 1 จาน จากราคาต่อหน่วยในสต๊อก
+async function recipeCost(accountId, items) {
+  let cost = 0; const missing = [];
+  for (const it of items) {
+    const s = await findStock(accountId, it.ingredient);
+    const uc = s ? Number(s.unit_cost) : 0;
+    if (!s || uc <= 0) missing.push(it.ingredient);
+    cost += uc * Number(it.qty);
+  }
+  return { cost, missing, complete: missing.length === 0 };
+}
+// ตัดสต๊อกตามสูตร เมื่อขายเมนูนั้น count จาน (คำนวณ JS, กัน pg-mem)
+async function applySaleToStock(accountId, menuName, count) {
+  const rec = await findRecipe(accountId, menuName);
+  if (!rec) return null;
+  const items = await getRecipeItems(rec.id);
+  if (!items.length) return null;
+  const n = Number(count) || 1;
+  const deducted = []; const nowLow = []; let cost = 0;
+  for (const it of items) {
+    const used = Number(it.qty) * n;
+    const s = await findStock(accountId, it.ingredient);
+    if (s) {
+      const newQty = Math.max(0, Number(s.qty) - used);
+      await pool.query(`UPDATE stock_items SET qty=$2, updated_at=now() WHERE id=$1`, [s.id, newQty]);
+      const low = Number(s.low_threshold) > 0 && newQty <= Number(s.low_threshold);
+      if (low) nowLow.push(it.ingredient);
+      cost += Number(s.unit_cost) * used;
+      deducted.push({ ingredient: it.ingredient, used, unit: it.unit || s.unit || '', remaining: newQty, low });
+    } else {
+      deducted.push({ ingredient: it.ingredient, used, unit: it.unit || '', remaining: null, low: false, noStock: true });
+    }
+  }
+  return { menuName: rec.menu_name, count: n, deducted, nowLow, cost };
+}
+
+// ===== เฟส 32: จัดการพนักงาน =====
+async function findStaff(accountId, name) {
+  name = (name || '').trim();
+  if (!name) return null;
+  const { rows } = await pool.query(`SELECT * FROM staff WHERE account_id=$1 AND active=1`, [accountId]);
+  const ln = name.toLowerCase();
+  return rows.find(r => (r.name || '').toLowerCase() === ln)
+    || rows.filter(r => { const rn = (r.name || '').toLowerCase(); return rn && (ln.includes(rn) || rn.includes(ln)); })
+         .sort((a, b) => (b.name || '').length - (a.name || '').length)[0]
+    || null;
+}
+async function addStaff(accountId, name, dayWage) {
+  name = (name || '').trim();
+  const ex = await findStaff(accountId, name);
+  if (ex && ex.name.toLowerCase() === name.toLowerCase()) {
+    await pool.query(`UPDATE staff SET day_wage=$2 WHERE id=$1`, [ex.id, Number(dayWage)]);
+    return { ...ex, day_wage: Number(dayWage), isNew: false };
+  }
+  const { rows } = await pool.query(`INSERT INTO staff (account_id, name, day_wage, active) VALUES ($1,$2,$3,1) RETURNING *`,
+    [accountId, name, Number(dayWage)]);
+  return { ...rows[0], isNew: true };
+}
+async function listStaff(accountId) {
+  const { rows } = await pool.query(`SELECT * FROM staff WHERE account_id=$1 AND active=1 ORDER BY name ASC`, [accountId]);
+  return rows.map(r => ({ ...r, day_wage: Number(r.day_wage) }));
+}
+async function removeStaff(accountId, name) {
+  const ex = await findStaff(accountId, name);
+  if (!ex) return { found: false };
+  await pool.query(`DELETE FROM staff_logs WHERE staff_id=$1`, [ex.id]);
+  await pool.query(`DELETE FROM staff WHERE id=$1`, [ex.id]);
+  return { found: true, name: ex.name };
+}
+async function logStaff(accountId, staffId, kind, amount, note, date) {
+  await pool.query(`INSERT INTO staff_logs (account_id, staff_id, kind, amount, note, log_date) VALUES ($1,$2,$3,$4,$5,$6)`,
+    [accountId, staffId, kind, Number(amount), note || null, date]);
+}
+// สรุปยอดพนักงานคนเดียว: earned = วันทำงาน*ค่าแรง, owed = earned - เบิก - จ่ายแล้ว
+async function staffSummary(accountId, staff) {
+  const { rows } = await pool.query(`SELECT kind, amount FROM staff_logs WHERE staff_id=$1`, [staff.id]);
+  let days = 0, advance = 0, paid = 0;
+  for (const r of rows) {
+    const a = Number(r.amount);
+    if (r.kind === 'work') days += a;
+    else if (r.kind === 'advance') advance += a;
+    else if (r.kind === 'pay') paid += a;
+  }
+  const earned = days * Number(staff.day_wage);
+  return { id: staff.id, name: staff.name, dayWage: Number(staff.day_wage), days, earned, advance, paid, owed: earned - advance - paid };
+}
+async function staffAllSummary(accountId) {
+  const staff = await listStaff(accountId);
+  const out = [];
+  for (const s of staff) out.push(await staffSummary(accountId, s));
+  return out;
 }
 
 async function accountOf(lineUserId) {
@@ -707,5 +900,7 @@ module.exports = {
   getOnboard, setOnboard,
   upsertDebt, listDebts, debtTotals, settleDebt,
   setStock, adjustStock, setThreshold, listStock, lowStock, removeStock, findStock,
+  setStockCost, setRecipe, getRecipe, listRecipes, deleteRecipe, recipeCost, applySaleToStock,
+  findStaff, addStaff, listStaff, removeStaff, logStaff, staffSummary, staffAllSummary,
   createRecurring, listRecurring, deleteRecurring, toggleRecurring, recurringToRun, markRecurringRun,
 };

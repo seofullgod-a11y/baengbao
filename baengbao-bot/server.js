@@ -245,6 +245,34 @@ async function confirmAndSummary(userId, parsed, source) {
   });
   const messages = [{ type: 'flex', altText: card.altText, contents: card.contents }];
 
+  // เฟส 31: ตัดสต๊อกอัตโนมัติตามสูตร (เฉพาะการขายที่มีเมนู)
+  if (parsed.type === 'income' && parsed.items && parsed.items.length) {
+    try {
+      const lines = []; const lowSet = new Set(); let totalCost = 0; let matched = false;
+      for (const it of parsed.items) {
+        const r = await db.applySaleToStock(userId, it.name, Number(it.qty) || 1);
+        if (!r) continue;
+        matched = true;
+        for (const d of r.deducted) {
+          if (d.noStock) continue;
+          const u = d.unit ? ' ' + d.unit : '';
+          lines.push(`${d.ingredient} −${baht(d.used)}${u} (เหลือ ${baht(d.remaining)}${u})`);
+          if (d.low) lowSet.add(d.ingredient);
+        }
+        totalCost += r.cost || 0;
+      }
+      if (matched && lines.length) {
+        let txt = '📦 ตัดสต๊อกอัตโนมัติ\n' + lines.join('\n');
+        if (lowSet.size) txt += `\n🔔 ใกล้หมด: ${[...lowSet].join(', ')} — พิมพ์ ต้องซื้อ`;
+        if (totalCost > 0) {
+          const gross = parsed.amount - totalCost;
+          txt += `\n💰 ต้นทุนวัตถุดิบ ~${baht(Math.round(totalCost))} บาท · กำไรขั้นต้น ~${baht(Math.round(gross))} บาท`;
+        }
+        messages.push({ type: 'text', text: txt });
+      }
+    } catch (e) { console.error('[autoDeduct]', e.message); }
+  }
+
   // เฟส 8: เชียร์เมื่อยอดขายเพิ่งแตะเป้า
   if (parsed.type === 'income') {
     try {
@@ -766,6 +794,138 @@ async function handleEvent(ev) {
           if (!r.found) return replyText(ev.replyToken, `ไม่เจอ ${m[1].trim()} ในสต๊อกครับ`);
           return replyText(ev.replyToken, `ลบ ${r.name} ออกจากสต๊อกแล้วครับ ✅`);
         }
+        // ตั้งต้นทุนต่อหน่วย: ต้นทุน หมู 120
+        m = raw.match(/^(?:ต้นทุน|ราคาทุน)\s+(.+)$/);
+        if (m) {
+          const p = trailNum(m[1]);
+          if (p && p.name && p.qty >= 0) {
+            const r = await db.setStockCost(userId, p.name, p.qty);
+            if (!r.found) return replyText(ev.replyToken, `ยังไม่มี ${p.name} ในสต๊อกครับ\nตั้งของก่อนด้วย  สต๊อก ${p.name} <จำนวน>`);
+            return replyText(ev.replyToken, `ตั้งต้นทุนแล้วครับ 💰\n${r.item.name} = ${baht(p.qty)} บาท/${r.item.unit || 'หน่วย'}`);
+          }
+        }
+      }
+
+      // ===== เฟส 31: สูตรอาหาร =====
+      {
+        // ตั้งสูตร: สูตร กะเพราหมู = หมู 0.1 กก, ไข่ 1 ฟอง, ข้าว 1 จาน
+        let m = raw.match(/^สูตร\s+(.+?)\s*=\s*(.+)$/);
+        if (m) {
+          const menuName = m[1].trim();
+          const parts = m[2].split(/[,，]/).map(s => s.trim()).filter(Boolean);
+          const items = [];
+          for (const p of parts) {
+            const mm = p.match(/^(.+?)\s+([\d.]+)\s*(.*)$/);
+            if (mm) items.push({ ingredient: mm[1].trim(), qty: parseFloat(mm[2]), unit: (mm[3] || '').trim() });
+          }
+          if (!menuName || !items.length)
+            return replyText(ev.replyToken, 'พิมพ์แบบนี้ครับ:\nสูตร กะเพราหมู = หมู 0.1 กก, ไข่ 1 ฟอง, ข้าว 1 จาน');
+          await db.setRecipe(userId, menuName, items);
+          const cost = await db.recipeCost(userId, items);
+          const c = flex.recipeCard(menuName, items, cost, liffUrl());
+          return replyFlex(ev.replyToken, c.altText, c.contents);
+        }
+        // ดูสูตรทั้งหมด
+        if (['สูตร', 'สูตรอาหาร', 'ดูสูตร'].includes(raw)) {
+          const recipes = await db.listRecipes(userId);
+          const c = flex.recipeListCard(recipes, liffUrl());
+          return replyFlex(ev.replyToken, c.altText, c.contents);
+        }
+        // ลบสูตร
+        m = raw.match(/^ลบสูตร\s+(.+)$/);
+        if (m) {
+          const r = await db.deleteRecipe(userId, m[1].trim());
+          if (!r.found) return replyText(ev.replyToken, `ไม่เจอสูตร ${m[1].trim()} ครับ`);
+          return replyText(ev.replyToken, `ลบสูตร ${r.menuName} แล้วครับ ✅`);
+        }
+        // ดูสูตรเมนูเดียว: สูตร <เมนู>
+        m = raw.match(/^สูตร\s+(.+)$/);
+        if (m) {
+          const rc = await db.getRecipe(userId, m[1].trim());
+          if (!rc) return replyText(ev.replyToken, `ยังไม่มีสูตร ${m[1].trim()} ครับ\nตั้งได้เลย เช่น  สูตร ${m[1].trim()} = หมู 0.1 กก, ไข่ 1 ฟอง`);
+          const cost = await db.recipeCost(userId, rc.items);
+          const c = flex.recipeCard(rc.menuName, rc.items, cost, liffUrl());
+          return replyFlex(ev.replyToken, c.altText, c.contents);
+        }
+      }
+
+      // ===== เฟส 32: จัดการพนักงาน =====
+      {
+        const tail = (str) => {
+          const mm = str.match(/(-?[\d,]+(?:\.\d+)?)\s*(?:บาท|฿|วัน)?\s*$/);
+          if (!mm) return { name: str.trim(), num: null };
+          return { name: str.slice(0, mm.index).trim(), num: Number(mm[1].replace(/,/g, '')) };
+        };
+        // เพิ่มพนักงาน: พนักงาน สมชาย 350
+        let m = raw.match(/^(?:พนักงาน|ลูกจ้าง|เพิ่มพนักงาน)\s+(.+)$/);
+        if (m) {
+          const { name, num } = tail(m[1]);
+          if (name && num != null && num > 0) {
+            const s = await db.addStaff(userId, name, num);
+            const c = flex.staffAddedCard(s);
+            return replyFlex(ev.replyToken, c.altText, c.contents);
+          }
+          // พนักงาน <ชื่อ> (ไม่มีเลข) -> ดูสรุปคนนั้น
+          const st = await db.findStaff(userId, m[1].trim());
+          if (st) {
+            const sum = await db.staffSummary(userId, st);
+            const c = flex.staffDetailCard(sum, liffUrl());
+            return replyFlex(ev.replyToken, c.altText, c.contents);
+          }
+          return replyText(ev.replyToken, `ยังไม่มีพนักงานชื่อ ${m[1].trim()} ครับ\nเพิ่มได้เลย เช่น  พนักงาน ${m[1].trim()} 350`);
+        }
+        // ดูพนักงานทั้งหมด
+        if (['พนักงาน', 'ลูกจ้าง', 'ดูพนักงาน', 'ทีมงาน'].includes(raw)) {
+          const rows = await db.staffAllSummary(userId);
+          const c = flex.staffListCard(rows, liffUrl());
+          return replyFlex(ev.replyToken, c.altText, c.contents);
+        }
+        // ลงเวลา: ลงเวลา สมชาย [จำนวนวัน=1]
+        m = raw.match(/^(?:ลงเวลา|เข้างาน|มาทำงาน)\s+(.+)$/);
+        if (m) {
+          const { name, num } = tail(m[1]);
+          const st = await db.findStaff(userId, name || m[1].trim());
+          if (!st) return replyText(ev.replyToken, `ไม่เจอพนักงาน ${(name || m[1]).trim()} ครับ\nพิมพ์  พนักงาน  เพื่อดูรายชื่อ`);
+          const days = num != null && num > 0 ? num : 1;
+          await db.logStaff(userId, st.id, 'work', days, null, bkkDate());
+          const sum = await db.staffSummary(userId, st);
+          return replyText(ev.replyToken, `บันทึกแล้ว ✅\n${st.name} ทำงานเพิ่ม ${baht(days)} วัน\nรวมเดือนนี้ ${baht(sum.days)} วัน · ค้างจ่าย ${baht(Math.round(sum.owed))} บาท`);
+        }
+        // เบิกเงิน: เบิก สมชาย 500
+        m = raw.match(/^(?:เบิก|เบิกเงิน|เบิกล่วงหน้า)\s+(.+)$/);
+        if (m) {
+          const { name, num } = tail(m[1]);
+          if (name && num != null && num > 0) {
+            const st = await db.findStaff(userId, name);
+            if (!st) return replyText(ev.replyToken, `ไม่เจอพนักงาน ${name} ครับ`);
+            await db.logStaff(userId, st.id, 'advance', num, null, bkkDate());
+            await db.insertTxn({ lineUserId: userId, type: 'expense', amount: num, category: 'ค่าแรง', note: `เบิกเงิน ${st.name}`, items: null, source: 'staff', txnDate: bkkDate() });
+            const sum = await db.staffSummary(userId, st);
+            const c = flex.staffPayCard('advance', st.name, num, sum);
+            return replyFlex(ev.replyToken, c.altText, c.contents);
+          }
+        }
+        // จ่ายค่าแรง: จ่ายค่าแรง สมชาย 2000
+        m = raw.match(/^(?:จ่ายค่าแรง|จ่ายเงินเดือน|จ่ายลูกจ้าง)\s+(.+)$/);
+        if (m) {
+          const { name, num } = tail(m[1]);
+          if (name && num != null && num > 0) {
+            const st = await db.findStaff(userId, name);
+            if (!st) return replyText(ev.replyToken, `ไม่เจอพนักงาน ${name} ครับ`);
+            await db.logStaff(userId, st.id, 'pay', num, null, bkkDate());
+            await db.insertTxn({ lineUserId: userId, type: 'expense', amount: num, category: 'ค่าแรง', note: `จ่ายค่าแรง ${st.name}`, items: null, source: 'staff', txnDate: bkkDate() });
+            const sum = await db.staffSummary(userId, st);
+            const c = flex.staffPayCard('pay', st.name, num, sum);
+            return replyFlex(ev.replyToken, c.altText, c.contents);
+          }
+        }
+        // ลบพนักงาน
+        m = raw.match(/^ลบพนักงาน\s+(.+)$/);
+        if (m) {
+          const r = await db.removeStaff(userId, m[1].trim());
+          if (!r.found) return replyText(ev.replyToken, `ไม่เจอพนักงาน ${m[1].trim()} ครับ`);
+          return replyText(ev.replyToken, `ลบพนักงาน ${r.name} แล้วครับ ✅`);
+        }
       }
 
       { const q = await overQuota(userId); if (q.over) return replyText(ev.replyToken, quotaMessage(q)); }
@@ -976,7 +1136,7 @@ async function liffAuth(req, res, next) {
   }
 }
 
-app.use(['/api/menus', '/api/stats', '/api/transactions', '/api/goals', '/api/cost-compare', '/api/settings', '/api/export-link', '/api/recurring', '/api/stock', '/api/debts'], express.json(), liffAuth);
+app.use(['/api/menus', '/api/stats', '/api/transactions', '/api/goals', '/api/cost-compare', '/api/settings', '/api/export-link', '/api/recurring', '/api/stock', '/api/debts', '/api/recipes', '/api/staff'], express.json(), liffAuth);
 
 app.get('/api/menus', async (req, res) => {
   await db.upsertUser(req.identityId, req.displayName);
@@ -1100,6 +1260,69 @@ app.post('/api/debts/settle', async (req, res) => {
     });
   }
   res.json({ ok: true, applied: s.applied, remaining: s.remaining, party: s.party });
+});
+
+// ---- เฟส 31: สูตรอาหาร ----
+app.get('/api/recipes', async (req, res) => {
+  const [recipes, stock] = await Promise.all([db.listRecipes(req.userId), db.listStock(req.userId)]);
+  const withCost = [];
+  for (const r of recipes) withCost.push({ ...r, cost: await db.recipeCost(req.userId, r.items) });
+  res.json({ recipes: withCost, stock });
+});
+app.post('/api/recipes', async (req, res) => {
+  const { menuName, items } = req.body || {};
+  if (!menuName || !String(menuName).trim() || !Array.isArray(items) || !items.length)
+    return res.status(400).json({ error: 'ข้อมูลไม่ครบ' });
+  const clean = items.filter(it => it && it.ingredient && String(it.ingredient).trim() && +it.qty > 0)
+    .map(it => ({ ingredient: String(it.ingredient).trim(), qty: +it.qty, unit: (it.unit || '').trim() }));
+  if (!clean.length) return res.status(400).json({ error: 'ต้องมีวัตถุดิบอย่างน้อย 1 อย่าง' });
+  await db.setRecipe(req.userId, String(menuName).trim(), clean);
+  const cost = await db.recipeCost(req.userId, clean);
+  res.json({ ok: true, cost });
+});
+app.post('/api/recipes/delete', async (req, res) => {
+  const r = await db.deleteRecipe(req.userId, String((req.body || {}).menuName || '').trim());
+  res.json({ ok: r.found });
+});
+app.post('/api/stock/cost', async (req, res) => {
+  const { name, cost } = req.body || {};
+  const r = await db.setStockCost(req.userId, String(name || '').trim(), +cost || 0);
+  if (!r.found) return res.status(404).json({ error: 'ไม่พบวัตถุดิบ' });
+  res.json({ ok: true, item: r.item });
+});
+
+// ---- เฟส 32: จัดการพนักงาน ----
+app.get('/api/staff', async (req, res) => {
+  const staff = await db.staffAllSummary(req.userId);
+  res.json({ staff });
+});
+app.post('/api/staff', async (req, res) => {
+  const { name, dayWage } = req.body || {};
+  if (!name || !String(name).trim() || !(+dayWage >= 0)) return res.status(400).json({ error: 'ข้อมูลไม่ครบ' });
+  const s = await db.addStaff(req.userId, String(name).trim(), +dayWage);
+  res.json({ ok: true, staff: s });
+});
+app.post('/api/staff/log', async (req, res) => {
+  const { name, kind, amount } = req.body || {};
+  const k = ['work', 'advance', 'pay'].includes(kind) ? kind : null;
+  if (!k) return res.status(400).json({ error: 'kind ไม่ถูกต้อง' });
+  const st = await db.findStaff(req.userId, String(name || '').trim());
+  if (!st) return res.status(404).json({ error: 'ไม่พบพนักงาน' });
+  const amt = k === 'work' ? (+amount > 0 ? +amount : 1) : +amount;
+  if (k !== 'work' && !(amt > 0)) return res.status(400).json({ error: 'ยอดต้องมากกว่า 0' });
+  await db.logStaff(req.userId, st.id, k, amt, null, bkkDate());
+  if (k === 'advance' || k === 'pay') {
+    await db.insertTxn({
+      lineUserId: req.userId, type: 'expense', amount: amt, category: 'ค่าแรง',
+      note: (k === 'advance' ? 'เบิกเงิน ' : 'จ่ายค่าแรง ') + st.name, items: null, source: 'app', txnDate: bkkDate(),
+    });
+  }
+  const sum = await db.staffSummary(req.userId, st);
+  res.json({ ok: true, summary: sum });
+});
+app.post('/api/staff/remove', async (req, res) => {
+  const r = await db.removeStaff(req.userId, String((req.body || {}).name || '').trim());
+  res.json({ ok: r.found });
 });
 
 // ---- เฟส 8: เป้ายอดขาย ----
