@@ -32,9 +32,9 @@
   header p{font-size:13px;opacity:.85;margin-top:1px}
 
   .tabs{position:sticky;top:0;z-index:30;background:linear-gradient(150deg,var(--blue),var(--blue-deep));padding-bottom:0}
-  .tabs .wrap{display:flex;gap:6px}
-  .tab{flex:1;text-align:center;padding:12px 0 13px;color:rgba(255,255,255,.7);font-family:"Kanit";font-weight:600;font-size:14px;border-bottom:3px solid transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px}
-  .tab svg{width:17px;height:17px}
+  .tabs .wrap{display:flex;gap:2px}
+  .tab{flex:1;text-align:center;padding:9px 0 9px;color:rgba(255,255,255,.7);font-family:"Kanit";font-weight:600;font-size:11px;border-bottom:3px solid transparent;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;line-height:1}
+  .tab svg{width:19px;height:19px}
   .tab.active{color:#fff;border-bottom-color:#fff}
 
   .view{display:none}
@@ -188,6 +188,42 @@
   .recur-add-row{display:flex;gap:9px}
   .recur-add-row input{flex:1;min-width:0}
   .recur-add-row button{flex:none;border:none;background:var(--profit);color:#fff;border-radius:10px;padding:0 18px;font-family:"Kanit";font-weight:600;font-size:14px;cursor:pointer}
+  /* ---- stock + debts tabs ---- */
+  .stock-add,.debt-add{background:#fff;border:1px solid var(--border);border-radius:14px;padding:12px;margin-bottom:14px}
+  .stock-add{display:flex;gap:8px}
+  .stock-add input{flex:1;min-width:0;border:1px solid var(--border);border-radius:9px;padding:10px;font-family:inherit;font-size:14px}
+  .stock-add #stName{flex:2}.stock-add #stUnit{flex:1}
+  .stock-add button,.debt-add #dbAddBtn{flex:none;background:var(--blue);color:#fff;border:none;border-radius:9px;padding:0 16px;font-family:"Kanit";font-weight:600;font-size:14px;cursor:pointer}
+  .drow{display:flex;gap:8px}
+  .drow input{flex:1;min-width:0;border:1px solid var(--border);border-radius:9px;padding:10px;font-family:inherit;font-size:14px}
+  .dseg{display:flex;gap:6px;margin-bottom:10px}
+  .dseg button{flex:1;border:1px solid var(--border);background:#f6f9ff;color:var(--ink-soft);border-radius:9px;padding:9px;font-family:"Kanit";font-weight:600;font-size:14px;cursor:pointer}
+  .dseg button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+  .buybox{background:#fff6ee;border:1px solid #f7d3ab;border-radius:14px;padding:14px;margin-bottom:14px}
+  .buybox .bb-h{font-family:"Kanit";font-weight:700;color:#d8730f;font-size:15px;margin-bottom:6px}
+  .buybox .bb-list{color:#9a5a13;font-size:13.5px;line-height:1.6}
+  .strow{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border)}
+  .strow:last-child{border-bottom:none}
+  .strow .st-l{flex:1;min-width:0}
+  .strow .st-n{font-weight:600;color:var(--ink)}
+  .strow .st-th{font-size:11.5px;color:var(--ink-faint)}
+  .strow .st-q{font-family:"Kanit";font-weight:700;font-size:15px;color:var(--ink);flex:none;margin-right:2px}
+  .strow.low .st-q{color:#f0883e}
+  .st-act{display:flex;gap:4px;flex:none}
+  .st-act button{border:1px solid var(--border);background:#f6f9ff;color:var(--blue);border-radius:8px;padding:6px 9px;font-family:"Kanit";font-weight:600;font-size:12.5px;cursor:pointer}
+  .st-act button.ic{padding:6px 8px;font-size:13px}
+  .health{background:linear-gradient(150deg,#0b49c9,#1f6bff);color:#fff}
+  .health .hh{font-family:"Kanit";font-weight:700;font-size:15px;margin-bottom:10px;opacity:.95}
+  .health .hrow{display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:14px;color:rgba(255,255,255,.9)}
+  .health .hrow b{font-family:"Kanit";font-size:15px}
+  .health .hrow.tot{border-top:1px solid rgba(255,255,255,.25);margin-top:6px;padding-top:9px}
+  .health .hrow.tot b{font-size:17px}
+  .drow2{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border)}
+  .drow2:last-child{border-bottom:none}
+  .drow2 .d-n{flex:1;font-weight:600;color:var(--ink)}
+  .drow2 .d-a{font-family:"Kanit";font-weight:700;font-size:15px;flex:none}
+  .drow2 .d-b{flex:none;border:none;background:var(--blue);color:#fff;border-radius:8px;padding:7px 12px;font-family:"Kanit";font-weight:600;font-size:12.5px;cursor:pointer}
+  .dl-empty{color:var(--ink-faint);font-size:13.5px;padding:4px 0}
 </style>
 </head>
 <body>
@@ -202,6 +238,8 @@
     <div class="tab active" data-tab="menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11h18"/><path d="M5 11V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v4"/><path d="M5 11v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8"/></svg>เมนู</div>
     <div class="tab" data-tab="report"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6" rx="1"/><rect x="12" y="7" width="3" height="10" rx="1"/><rect x="17" y="13" width="3" height="4" rx="1"/></svg>รายงาน</div>
     <div class="tab" data-tab="goals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>เป้า</div>
+    <div class="tab" data-tab="stock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9 12 4l9 5-9 5-9-5Z"/><path d="M3 9v6l9 5 9-5V9"/><path d="M12 14v6"/></svg>สต๊อก</div>
+    <div class="tab" data-tab="debts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>หนี้</div>
     <div class="tab" data-tab="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>ตั้งค่า</div>
   </div>
 </div>
@@ -245,6 +283,34 @@
 <div class="view" id="view-settings">
   <div class="wrap">
     <div id="settingsBox"><div class="loading"><div class="spin"></div>กำลังโหลด...</div></div>
+  </div>
+</div>
+
+<!-- STOCK VIEW -->
+<div class="view" id="view-stock">
+  <div class="wrap">
+    <div class="stock-add">
+      <input id="stName" placeholder="ชื่อวัตถุดิบ เช่น หมู" />
+      <input id="stQty" type="number" inputmode="decimal" placeholder="จำนวน" />
+      <input id="stUnit" placeholder="หน่วย" />
+      <button id="stAddBtn">เพิ่ม</button>
+    </div>
+    <div id="stockBox"><div class="loading"><div class="spin"></div>กำลังโหลด...</div></div>
+  </div>
+</div>
+
+<!-- DEBTS VIEW -->
+<div class="view" id="view-debts">
+  <div class="wrap">
+    <div class="debt-add">
+      <div class="dseg"><button class="on" data-dir="receivable" id="segRecv">ลูกหนี้</button><button data-dir="payable" id="segPay">เจ้าหนี้</button></div>
+      <div class="drow">
+        <input id="dbParty" placeholder="ชื่อ เช่น ป้าแดง" />
+        <input id="dbAmount" type="number" inputmode="decimal" placeholder="ยอด" />
+        <button id="dbAddBtn">เพิ่ม</button>
+      </div>
+    </div>
+    <div id="debtsBox"><div class="loading"><div class="spin"></div>กำลังโหลด...</div></div>
   </div>
 </div>
 
@@ -307,11 +373,13 @@ async function api(path, opts={}){
 let costLoaded=false;
 function switchTab(name){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
-  ['menu','report','goals','settings'].forEach(v=>$('view-'+v).classList.toggle('active',name===v));
+  ['menu','report','goals','settings','stock','debts'].forEach(v=>$('view-'+v).classList.toggle('active',name===v));
   $('addBtn').classList.toggle('hide',name!=='menu');
   if(name==='report'){ if(!curMonth){curMonth=thisMonth();} loadReport(); if(!costLoaded){loadCostCompare();costLoaded=true;} }
   if(name==='goals'){ loadGoals(); }
   if(name==='settings'){ loadSettings(); }
+  if(name==='stock'){ loadStock(); }
+  if(name==='debts'){ loadDebts(); }
 }
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>switchTab(t.dataset.tab)));
 
@@ -456,9 +524,12 @@ window.delTxn=async function(id){if(!confirm('ลบรายการนี้?
 $('prevM').addEventListener('click',()=>{curMonth=addMonth(curMonth,-1);loadReport();});
 $('nextM').addEventListener('click',()=>{if(curMonth<thisMonth()){curMonth=addMonth(curMonth,1);loadReport();}});
 $('up').addEventListener('input',renderMenus);
-$('addBtn').addEventListener('click',openAdd);
-$('saveBtn').addEventListener('click',saveMenu);
+$('addBtn').addEventListener('click',openAdd);$('saveBtn').addEventListener('click',saveMenu);
 $('cancelBtn').addEventListener('click',closeSheet);
+$('stAddBtn').addEventListener('click',stAdd);
+$('dbAddBtn').addEventListener('click',dbAdd);
+$('segRecv').addEventListener('click',()=>{debtDir='receivable';$('segRecv').classList.add('on');$('segPay').classList.remove('on');});
+$('segPay').addEventListener('click',()=>{debtDir='payable';$('segPay').classList.add('on');$('segRecv').classList.remove('on');});
 $('sheetBg').addEventListener('click',closeSheet);
 
 /* ---------- goals tab ---------- */
@@ -490,6 +561,107 @@ window.saveGoal=async function(period,del){
   try{await api('/api/goals',{method:'POST',body:JSON.stringify({[period]:val})});toast(del?'ลบเป้าแล้ว':'ตั้งเป้าแล้ว');loadGoals();}
   catch(e){toast('บันทึกไม่สำเร็จ');}
 };
+
+/* ---------- stock tab ---------- */
+async function loadStock(){
+  $('stockBox').innerHTML='<div class="loading"><div class="spin"></div>กำลังโหลด...</div>';
+  try{
+    const d=await api('/api/stock');
+    let html='';
+    if(d.low && d.low.length){
+      html+=`<div class="buybox"><div class="bb-h">🛒 ต้องซื้อ (${d.low.length})</div><div class="bb-list">${d.low.map(i=>escapeHtml(i.name)+' · เหลือ '+baht(i.qty)+(i.unit?' '+escapeHtml(i.unit):'')).join('<br>')}</div></div>`;
+    }
+    if(!d.items.length){
+      html+='<div class="empty"><p>ยังไม่มีวัตถุดิบ<br><small>เพิ่มด้านบน หรือพิมพ์ในแชท เช่น สต๊อก หมู 10 กก</small></p></div>';
+    }else{
+      html+='<div class="panel">'+d.items.map(i=>{
+        const u=i.unit?' '+escapeHtml(i.unit):'';
+        const th=i.low_threshold>0?('เตือนที่ '+baht(i.low_threshold)+u):'ยังไม่ตั้งเตือน';
+        return `<div class="strow ${i.low?'low':''}">
+          <div class="st-l"><div class="st-n">${i.low?'🔴 ':''}${escapeHtml(i.name)}</div><div class="st-th">${th}</div></div>
+          <div class="st-q">${baht(i.qty)}${u}</div>
+          <div class="st-act">
+            <button onclick="stAdjust('${escapeHtml(i.name).replace(/'/g,"\\'")}',1)">เติม</button>
+            <button onclick="stAdjust('${escapeHtml(i.name).replace(/'/g,"\\'")}',-1)">ใช้</button>
+            <button class="ic" onclick="stThresh('${escapeHtml(i.name).replace(/'/g,"\\'")}',${i.low_threshold})">🔔</button>
+            <button class="ic" onclick="stRemove('${escapeHtml(i.name).replace(/'/g,"\\'")}')">🗑</button>
+          </div></div>`;
+      }).join('')+'</div>';
+    }
+    $('stockBox').innerHTML=html;
+  }catch(e){$('stockBox').innerHTML='<div class="empty"><p>โหลดไม่สำเร็จ<br><small>'+escapeHtml(e.message||'')+'</small></p></div>';}
+}
+window.stAdjust=async function(name,sign){
+  const v=prompt((sign>0?'เติม':'ตัด')+' '+name+' จำนวนเท่าไหร่?');
+  if(v==null) return; const n=parseFloat(v); if(!(n>0)){toast('ใส่จำนวนให้ถูกต้อง');return;}
+  try{await api('/api/stock/adjust',{method:'POST',body:JSON.stringify({name,delta:sign*n})});toast('อัปเดตแล้ว');loadStock();}
+  catch(e){toast('ไม่สำเร็จ');}
+};
+window.stThresh=async function(name,cur){
+  const v=prompt('เตือนเมื่อ '+name+' เหลือน้อยกว่าหรือเท่ากับ? (0 = ปิดเตือน)', cur||'');
+  if(v==null) return; const n=parseFloat(v); if(!(n>=0)){toast('ใส่ตัวเลข');return;}
+  try{await api('/api/stock/threshold',{method:'POST',body:JSON.stringify({name,threshold:n})});toast('ตั้งเตือนแล้ว');loadStock();}
+  catch(e){toast('ไม่สำเร็จ');}
+};
+window.stRemove=async function(name){
+  if(!confirm('ลบ '+name+' ออกจากสต๊อก?')) return;
+  try{await api('/api/stock/remove',{method:'POST',body:JSON.stringify({name})});toast('ลบแล้ว');loadStock();}
+  catch(e){toast('ไม่สำเร็จ');}
+};
+async function stAdd(){
+  const name=$('stName').value.trim(), qty=parseFloat($('stQty').value), unit=$('stUnit').value.trim();
+  if(!name||!(qty>=0)){toast('ใส่ชื่อและจำนวน');return;}
+  try{await api('/api/stock',{method:'POST',body:JSON.stringify({name,qty,unit})});
+    $('stName').value='';$('stQty').value='';$('stUnit').value='';toast('เพิ่มแล้ว');loadStock();}
+  catch(e){toast('ไม่สำเร็จ');}
+}
+
+/* ---------- debts tab ---------- */
+let debtDir='receivable';
+async function loadDebts(){
+  $('debtsBox').innerHTML='<div class="loading"><div class="spin"></div>กำลังโหลด...</div>';
+  try{
+    const d=await api('/api/debts');
+    const t=d.totals, net=(t.receivable||0)-(t.payable||0), pf=d.month.profit;
+    let html=`<div class="panel health">
+      <div class="hh">สุขภาพร้าน · ${monthLabel(thisMonth())}</div>
+      <div class="hrow"><span>กำไรเดือนนี้</span><b style="color:${pf>=0?'#00a86b':'#e5484d'}">${pf>=0?'+':'−'}${baht(Math.abs(pf))} ฿</b></div>
+      <div class="hrow"><span>ลูกค้าติดเรา (${t.receivableCount||0})</span><b style="color:#00a86b">+${baht(t.receivable)} ฿</b></div>
+      <div class="hrow"><span>เราติดร้านอื่น (${t.payableCount||0})</span><b style="color:#f0883e">−${baht(t.payable)} ฿</b></div>
+      <div class="hrow tot"><span>สุทธิหนี้</span><b style="color:${net>=0?'#00a86b':'#e5484d'}">${net>=0?'+':'−'}${baht(Math.abs(net))} ฿</b></div>
+    </div>`;
+    html+=debtList('ลูกค้าติดเงินเรา','receivable',d.receivable,'#00a86b','รับเงิน');
+    html+=debtList('เราติดร้านอื่น','payable',d.payable,'#f0883e','จ่ายแล้ว');
+    $('debtsBox').innerHTML=html;
+  }catch(e){$('debtsBox').innerHTML='<div class="empty"><p>โหลดไม่สำเร็จ<br><small>'+escapeHtml(e.message||'')+'</small></p></div>';}
+}
+function debtList(title,dir,rows,color,btn){
+  let inner;
+  if(!rows||!rows.length){ inner='<div class="dl-empty">ไม่มีรายการค้าง</div>'; }
+  else inner=rows.map(r=>`<div class="drow2">
+    <div class="d-n">${escapeHtml(r.party)}</div>
+    <div class="d-a" style="color:${color}">${baht(r.remaining)} ฿</div>
+    <button class="d-b" onclick="dbSettle('${dir}','${escapeHtml(r.party).replace(/'/g,"\\'")}')">${btn}</button>
+  </div>`).join('');
+  return `<div class="panel"><h3 style="color:${color}">${title}</h3>${inner}</div>`;
+}
+window.dbSettle=async function(dir,party){
+  const label=dir==='receivable'?'รับเงินจาก':'จ่ายให้';
+  const v=prompt(label+' '+party+' — ใส่ยอด (เว้นว่าง = ปิดครบ)','');
+  if(v==null) return;
+  const amount=v.trim()===''?null:parseFloat(v);
+  if(amount!=null&&!(amount>0)){toast('ใส่ยอดให้ถูกต้อง');return;}
+  try{const r=await api('/api/debts/settle',{method:'POST',body:JSON.stringify({direction:dir,party,amount})});
+    toast(dir==='receivable'?('รับแล้ว '+baht(r.applied)+' ฿'):('จ่ายแล้ว '+baht(r.applied)+' ฿'));loadDebts();}
+  catch(e){toast('ไม่สำเร็จ');}
+};
+async function dbAdd(){
+  const party=$('dbParty').value.trim(), amount=parseFloat($('dbAmount').value);
+  if(!party||!(amount>0)){toast('ใส่ชื่อและยอด');return;}
+  try{await api('/api/debts',{method:'POST',body:JSON.stringify({direction:debtDir,party,amount})});
+    $('dbParty').value='';$('dbAmount').value='';toast('บันทึกแล้ว');loadDebts();}
+  catch(e){toast('ไม่สำเร็จ');}
+}
 
 /* ---------- settings tab ---------- */
 async function loadSettings(){

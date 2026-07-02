@@ -972,7 +972,7 @@ async function liffAuth(req, res, next) {
   }
 }
 
-app.use(['/api/menus', '/api/stats', '/api/transactions', '/api/goals', '/api/cost-compare', '/api/settings', '/api/export-link', '/api/recurring'], express.json(), liffAuth);
+app.use(['/api/menus', '/api/stats', '/api/transactions', '/api/goals', '/api/cost-compare', '/api/settings', '/api/export-link', '/api/recurring', '/api/stock', '/api/debts'], express.json(), liffAuth);
 
 app.get('/api/menus', async (req, res) => {
   await db.upsertUser(req.identityId, req.displayName);
@@ -1030,6 +1030,72 @@ app.put('/api/transactions/:id', async (req, res) => {
     type, amount, category: (b.category || '').trim(), note: (b.note || '').trim(),
   });
   res.json({ ok });
+});
+
+// ---- เฟส 29: สต๊อกวัตถุดิบ ----
+app.get('/api/stock', async (req, res) => {
+  const items = await db.listStock(req.userId);
+  res.json({ items, low: items.filter(i => i.low) });
+});
+app.post('/api/stock', async (req, res) => {
+  const { name, qty, unit } = req.body || {};
+  if (!name || !String(name).trim()) return res.status(400).json({ error: 'ต้องมีชื่อวัตถุดิบ' });
+  const it = await db.setStock(req.userId, String(name).trim(), +qty || 0, (unit || '').trim());
+  res.json({ ok: true, item: it });
+});
+app.post('/api/stock/adjust', async (req, res) => {
+  const { name, delta } = req.body || {};
+  if (!name || !isFinite(+delta)) return res.status(400).json({ error: 'ข้อมูลไม่ครบ' });
+  const r = await db.adjustStock(req.userId, String(name).trim(), +delta);
+  if (!r.found) return res.status(404).json({ error: 'ไม่พบวัตถุดิบ' });
+  res.json({ ok: true, item: r.item });
+});
+app.post('/api/stock/threshold', async (req, res) => {
+  const { name, threshold } = req.body || {};
+  const r = await db.setThreshold(req.userId, String(name || '').trim(), +threshold || 0);
+  if (!r.found) return res.status(404).json({ error: 'ไม่พบวัตถุดิบ' });
+  res.json({ ok: true, item: r.item });
+});
+app.post('/api/stock/remove', async (req, res) => {
+  const r = await db.removeStock(req.userId, String((req.body || {}).name || '').trim());
+  res.json({ ok: r.found });
+});
+
+// ---- เฟส 28: ลูกหนี้-เจ้าหนี้ ----
+app.get('/api/debts', async (req, res) => {
+  const ym = bkkDate().slice(0, 7);
+  const [receivable, payable, totals, month] = await Promise.all([
+    db.listDebts(req.userId, 'receivable'),
+    db.listDebts(req.userId, 'payable'),
+    db.debtTotals(req.userId),
+    db.monthTotals(req.userId, ym),
+  ]);
+  res.json({ receivable, payable, totals, month });
+});
+app.post('/api/debts', async (req, res) => {
+  const { direction, party, amount } = req.body || {};
+  const dir = direction === 'payable' ? 'payable' : 'receivable';
+  if (!party || !String(party).trim() || !(+amount > 0)) return res.status(400).json({ error: 'ข้อมูลไม่ครบ' });
+  await db.upsertDebt(req.userId, dir, String(party).trim(), +amount, null, bkkDate());
+  res.json({ ok: true });
+});
+app.post('/api/debts/settle', async (req, res) => {
+  const { direction, party, amount } = req.body || {};
+  const dir = direction === 'payable' ? 'payable' : 'receivable';
+  const pay = amount == null || amount === '' ? null : +amount;
+  const s = await db.settleDebt(req.userId, dir, String(party || '').trim(), pay);
+  if (!s.found) return res.status(404).json({ error: 'ไม่พบรายการ' });
+  if (s.applied > 0) {
+    await db.insertTxn({
+      lineUserId: req.userId,
+      type: dir === 'receivable' ? 'income' : 'expense',
+      amount: s.applied,
+      category: dir === 'receivable' ? 'รับชำระหนี้' : 'จ่ายชำระหนี้',
+      note: (dir === 'receivable' ? 'รับเงินจาก ' : 'จ่ายให้ ') + s.party,
+      items: null, source: 'app', txnDate: bkkDate(),
+    });
+  }
+  res.json({ ok: true, applied: s.applied, remaining: s.remaining, party: s.party });
 });
 
 // ---- เฟส 8: เป้ายอดขาย ----
