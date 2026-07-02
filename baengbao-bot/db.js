@@ -65,6 +65,35 @@ async function init() {
   // เฟส 20: ระบบร้าน/พนักงาน (ใช้บัญชีข้อมูลร่วมกัน)
   // เฟส 23: โหมดมือใหม่ (สอนทีละขั้น) — 0/NULL=ไม่อยู่ในโหมดสอน, 1..=ขั้นที่กำลังสอน
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS onboard_step INT DEFAULT 0;`);
+  // เฟส 28: ลูกหนี้-เจ้าหนี้ (บิลเชื่อ / ค้างจ่ายซัพพลายเออร์)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS debts (
+      id SERIAL PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      direction TEXT NOT NULL,          -- 'receivable' (ลูกค้าติดเรา) | 'payable' (เราติดคนอื่น)
+      party TEXT NOT NULL,              -- ชื่อลูกค้า/ซัพพลายเออร์
+      amount NUMERIC NOT NULL DEFAULT 0,-- ยอดรวมที่ติด
+      paid NUMERIC NOT NULL DEFAULT 0,  -- จ่าย/รับคืนแล้วเท่าไหร่
+      note TEXT,
+      status TEXT NOT NULL DEFAULT 'open', -- 'open' | 'settled'
+      created_date DATE,
+      settled_date DATE,
+      created_at TIMESTAMPTZ DEFAULT now()
+    );
+  `);
+  // เฟส 29: สต๊อกวัตถุดิบ + เตือนของใกล้หมด
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS stock_items (
+      id SERIAL PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      unit TEXT DEFAULT '',
+      qty NUMERIC NOT NULL DEFAULT 0,
+      low_threshold NUMERIC NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT now(),
+      updated_at TIMESTAMPTZ DEFAULT now()
+    );
+  `);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS bot_state (
       k TEXT PRIMARY KEY,
@@ -172,6 +201,132 @@ async function setOnboard(lineUserId, step) {
 
 // เฟส 20: เพิ่มพนักงาน (แชร์บัญชีร้าน)
 // บัญชีข้อมูลของผู้ใช้คนนี้ = account_id (ถ้าเป็นพนักงาน) หรือ line_user_id ของตัวเอง (ถ้าเป็นเจ้าของ)
+// ===== เฟส 28: ลูกหนี้-เจ้าหนี้ =====
+// เพิ่มยอดหนี้ (สะสมต่อชื่อ+ทิศทาง: ถ้ามีรายการเปิดอยู่แล้ว บวกเพิ่ม)
+async function upsertDebt(accountId, direction, party, addAmount, note, date) {
+  party = (party || '').trim();
+  const { rows } = await pool.query(
+    `SELECT * FROM debts WHERE account_id=$1 AND direction=$2 AND status='open' AND lower(party)=lower($3) ORDER BY id ASC LIMIT 1`,
+    [accountId, direction, party]
+  );
+  if (rows[0]) {
+    const r = rows[0];
+    const newAmount = Number(r.amount) + Number(addAmount);
+    await pool.query(`UPDATE debts SET amount=$2, note=COALESCE($3,note) WHERE id=$1`, [r.id, newAmount, note || null]);
+    return { isNew: false, party, remaining: newAmount - Number(r.paid) };
+  }
+  await pool.query(
+    `INSERT INTO debts (account_id, direction, party, amount, paid, note, status, created_date) VALUES ($1,$2,$3,$4,0,$5,'open',$6)`,
+    [accountId, direction, party, Number(addAmount), note || null, date]
+  );
+  return { isNew: true, party, remaining: Number(addAmount) };
+}
+
+async function listDebts(accountId, direction) {
+  const { rows } = await pool.query(
+    `SELECT * FROM debts WHERE account_id=$1 AND direction=$2 AND status='open' ORDER BY created_at ASC`,
+    [accountId, direction]
+  );
+  return rows.map(r => ({ ...r, remaining: Number(r.amount) - Number(r.paid) })).filter(r => r.remaining > 0.0001);
+}
+
+async function debtTotals(accountId) {
+  const { rows } = await pool.query(`SELECT direction, amount, paid FROM debts WHERE account_id=$1 AND status='open'`, [accountId]);
+  const t = { receivable: 0, receivableCount: 0, payable: 0, payableCount: 0 };
+  for (const r of rows) {
+    const rem = Number(r.amount) - Number(r.paid);
+    if (rem <= 0.0001) continue;
+    if (r.direction === 'receivable') { t.receivable += rem; t.receivableCount++; }
+    else if (r.direction === 'payable') { t.payable += rem; t.payableCount++; }
+  }
+  return t;
+}
+
+// ชำระ/รับคืน: จ่ายตามชื่อ (payAmount=null => ปิดยอดที่เหลือทั้งหมด). คืนยอดที่ชำระจริง
+async function settleDebt(accountId, direction, party, payAmount) {
+  party = (party || '').trim();
+  const { rows } = await pool.query(
+    `SELECT * FROM debts WHERE account_id=$1 AND direction=$2 AND status='open' AND lower(party) LIKE lower($3) ORDER BY id ASC`,
+    [accountId, direction, '%' + party + '%']
+  );
+  if (!rows.length) return { found: false };
+  const fullName = rows[0].party;
+  let toPay = payAmount == null ? Infinity : Number(payAmount);
+  let applied = 0;
+  for (const r of rows) {
+    if (toPay <= 0.0001) break;
+    const rem = Number(r.amount) - Number(r.paid);
+    const pay = Math.min(rem, toPay);
+    const newPaid = Number(r.paid) + pay;
+    const settled = newPaid >= Number(r.amount) - 0.0001;
+    await pool.query(`UPDATE debts SET paid=$2, status=$3, settled_date=$4 WHERE id=$1`,
+      [r.id, newPaid, settled ? 'settled' : 'open', settled ? (r.created_date || null) : null]);
+    applied += pay; toPay -= pay;
+  }
+  // ยอดคงเหลือของชื่อนี้หลังชำระ
+  const after = await pool.query(
+    `SELECT amount, paid FROM debts WHERE account_id=$1 AND direction=$2 AND status='open' AND lower(party) LIKE lower($3)`,
+    [accountId, direction, '%' + party + '%']
+  );
+  const remaining = after.rows.reduce((s, r) => s + (Number(r.amount) - Number(r.paid)), 0);
+  return { found: true, party: fullName, applied, remaining };
+}
+
+// ===== เฟส 29: สต๊อกวัตถุดิบ =====
+function withLow(r) { const qty = Number(r.qty), th = Number(r.low_threshold); return { ...r, qty, low_threshold: th, low: th > 0 && qty <= th }; }
+
+async function findStock(accountId, name) {
+  const { rows } = await pool.query(`SELECT * FROM stock_items WHERE account_id=$1 AND lower(name)=lower($2) LIMIT 1`, [accountId, (name || '').trim()]);
+  return rows[0] || null;
+}
+// ตั้งยอดคงเหลือ (upsert)
+async function setStock(accountId, name, qty, unit) {
+  name = (name || '').trim();
+  const ex = await findStock(accountId, name);
+  if (ex) {
+    await pool.query(`UPDATE stock_items SET qty=$2, unit=COALESCE(NULLIF($3,''),unit), updated_at=now() WHERE id=$1`, [ex.id, Number(qty), unit || '']);
+    return withLow({ ...ex, qty, unit: unit || ex.unit });
+  }
+  const { rows } = await pool.query(
+    `INSERT INTO stock_items (account_id, name, unit, qty, low_threshold) VALUES ($1,$2,$3,$4,0) RETURNING *`,
+    [accountId, name, unit || '', Number(qty)]);
+  return withLow(rows[0]);
+}
+// เพิ่ม/ลดยอด (delta) — ถ้าไม่มีและ delta>0 สร้างใหม่
+async function adjustStock(accountId, name, delta) {
+  name = (name || '').trim();
+  const ex = await findStock(accountId, name);
+  if (!ex) {
+    if (delta > 0) { const created = await setStock(accountId, name, delta, ''); return { found: true, item: created }; }
+    return { found: false };
+  }
+  const newQty = Math.max(0, Number(ex.qty) + Number(delta));
+  await pool.query(`UPDATE stock_items SET qty=$2, updated_at=now() WHERE id=$1`, [ex.id, newQty]);
+  return { found: true, item: withLow({ ...ex, qty: newQty }) };
+}
+async function setThreshold(accountId, name, threshold) {
+  name = (name || '').trim();
+  const ex = await findStock(accountId, name);
+  if (!ex) return { found: false };
+  await pool.query(`UPDATE stock_items SET low_threshold=$2, updated_at=now() WHERE id=$1`, [ex.id, Number(threshold)]);
+  return { found: true, item: withLow({ ...ex, low_threshold: threshold }) };
+}
+async function listStock(accountId) {
+  const { rows } = await pool.query(`SELECT * FROM stock_items WHERE account_id=$1 ORDER BY name ASC`, [accountId]);
+  const items = rows.map(withLow);
+  items.sort((a, b) => (b.low - a.low) || a.name.localeCompare(b.name, 'th'));
+  return items;
+}
+async function lowStock(accountId) {
+  return (await listStock(accountId)).filter(r => r.low);
+}
+async function removeStock(accountId, name) {
+  const ex = await findStock(accountId, name);
+  if (!ex) return { found: false };
+  await pool.query(`DELETE FROM stock_items WHERE id=$1`, [ex.id]);
+  return { found: true, name: ex.name };
+}
+
 async function accountOf(lineUserId) {
   const { rows } = await pool.query(`SELECT account_id FROM users WHERE line_user_id=$1`, [lineUserId]);
   return (rows[0] && rows[0].account_id) ? rows[0].account_id : lineUserId;
@@ -550,5 +705,7 @@ module.exports = {
   getMembership, setMembership, usageToday, listUsersAdmin,
   accountOf, ensureInvite, findByInvite, joinShop, leaveShop, listShopMembers, countMembers,
   getOnboard, setOnboard,
+  upsertDebt, listDebts, debtTotals, settleDebt,
+  setStock, adjustStock, setThreshold, listStock, lowStock, removeStock, findStock,
   createRecurring, listRecurring, deleteRecurring, toggleRecurring, recurringToRun, markRecurringRun,
 };

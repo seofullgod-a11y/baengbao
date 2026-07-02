@@ -623,9 +623,148 @@ async function handleEvent(ev) {
         return replyFlex(ev.replyToken, c.altText, c.contents);
       }
 
+      // ===== เฟส 28: ลูกหนี้-เจ้าหนี้ =====
+      {
+        const parseNameAmount = (str) => {
+          const m = str.match(/(-?[\d,]+(?:\.\d+)?)\s*(?:บาท|฿)?\s*$/);
+          if (!m) return { name: str.trim(), amount: null };
+          const amount = Number(m[1].replace(/,/g, ''));
+          const name = str.slice(0, m.index).trim();
+          return { name, amount: isFinite(amount) ? amount : null };
+        };
+        // เพิ่มลูกหนี้ (ลูกค้าติดเรา)
+        let m = raw.match(/^(?:ลูกหนี้|เชื่อ|ติดเงิน|ติดไว้|ค้างเงิน)\s+(.+)$/);
+        if (m) {
+          const { name, amount } = parseNameAmount(m[1]);
+          if (!name || amount == null || amount <= 0)
+            return replyText(ev.replyToken, 'บอกชื่อกับยอดด้วยครับ เช่น  ลูกหนี้ ป้าแดง 120');
+          const r = await db.upsertDebt(userId, 'receivable', name, amount, null, bkkDate());
+          const c = flex.debtAddedCard('receivable', name, amount, r.remaining, liffUrl());
+          return replyFlex(ev.replyToken, c.altText, c.contents);
+        }
+        // เพิ่มเจ้าหนี้ (เราติดคนอื่น)
+        m = raw.match(/^(?:เจ้าหนี้|ค้างจ่าย|ติดหนี้|ค้างเขา)\s+(.+)$/);
+        if (m) {
+          const { name, amount } = parseNameAmount(m[1]);
+          if (!name || amount == null || amount <= 0)
+            return replyText(ev.replyToken, 'บอกชื่อกับยอดด้วยครับ เช่น  เจ้าหนี้ เจ๊ผักสด 2000');
+          const r = await db.upsertDebt(userId, 'payable', name, amount, null, bkkDate());
+          const c = flex.debtAddedCard('payable', name, amount, r.remaining, liffUrl());
+          return replyFlex(ev.replyToken, c.altText, c.contents);
+        }
+        // รับเงินคืนจากลูกค้า (ลูกหนี้ชำระ) -> บันทึกเป็นรายรับ
+        m = raw.match(/^(?:รับเงิน|เก็บเงิน|รับคืน|เก็บหนี้)\s+(.+)$/);
+        if (m) {
+          const { name, amount } = parseNameAmount(m[1]);
+          const s = await db.settleDebt(userId, 'receivable', name, amount);
+          if (!s.found) return replyText(ev.replyToken, `ไม่เจอลูกหนี้ชื่อ ${name.trim()} ครับ\nพิมพ์คำว่า  ลูกหนี้  เพื่อดูรายชื่อทั้งหมด`);
+          await db.insertTxn({ lineUserId: userId, type: 'income', amount: s.applied, category: 'รับชำระหนี้', note: `รับเงินจาก ${s.party}`, items: null, source: 'debt', txnDate: bkkDate() });
+          const c = flex.debtSettledCard('receivable', s.party, s.applied, s.remaining);
+          return replyFlex(ev.replyToken, c.altText, c.contents);
+        }
+        // จ่ายหนี้ให้ซัพพลายเออร์ (เจ้าหนี้) -> บันทึกเป็นรายจ่าย
+        m = raw.match(/^(?:จ่ายหนี้|ชำระหนี้|จ่ายเจ้าหนี้|ใช้หนี้)\s+(.+)$/);
+        if (m) {
+          const { name, amount } = parseNameAmount(m[1]);
+          const s = await db.settleDebt(userId, 'payable', name, amount);
+          if (!s.found) return replyText(ev.replyToken, `ไม่เจอเจ้าหนี้ชื่อ ${name.trim()} ครับ\nพิมพ์คำว่า  เจ้าหนี้  เพื่อดูรายชื่อทั้งหมด`);
+          await db.insertTxn({ lineUserId: userId, type: 'expense', amount: s.applied, category: 'จ่ายชำระหนี้', note: `จ่ายให้ ${s.party}`, items: null, source: 'debt', txnDate: bkkDate() });
+          const c = flex.debtSettledCard('payable', s.party, s.applied, s.remaining);
+          return replyFlex(ev.replyToken, c.altText, c.contents);
+        }
+        // ดูรายชื่อลูกหนี้ / เจ้าหนี้
+        if (raw === 'ลูกหนี้' || raw === 'ดูลูกหนี้' || raw === 'ใครติดเงิน' || raw === 'ใครติดบ้าง') {
+          const rows = await db.listDebts(userId, 'receivable');
+          const c = flex.debtListCard('receivable', rows, liffUrl());
+          return replyFlex(ev.replyToken, c.altText, c.contents);
+        }
+        if (raw === 'เจ้าหนี้' || raw === 'ดูเจ้าหนี้' || raw === 'ค้างจ่าย' || raw === 'ติดใครบ้าง') {
+          const rows = await db.listDebts(userId, 'payable');
+          const c = flex.debtListCard('payable', rows, liffUrl());
+          return replyFlex(ev.replyToken, c.altText, c.contents);
+        }
+        // เงินคงเหลือจริง / สุขภาพร้าน
+        if (['คงเหลือ', 'เงินคงเหลือ', 'สุขภาพร้าน', 'ฐานะร้าน', 'ฐานะ', 'เงินจริง'].some(k => raw === k)) {
+          const ym = bkkDate().slice(0, 7);
+          const mt = await db.monthTotals(userId, ym);
+          const dt = await db.debtTotals(userId);
+          const c = flex.healthCard({ monthLabel: xlsx.thMonthLabel(ym), month: mt, debt: dt });
+          return replyFlex(ev.replyToken, c.altText, c.contents);
+        }
+      }
+
+      // ===== เฟส 29: สต๊อกวัตถุดิบ =====
+      {
+        const trailNum = (str) => {
+          const m = str.match(/(-?[\d,]+(?:\.\d+)?)\s*(.*)$/);
+          if (!m) return null;
+          const qty = Number(m[1].replace(/,/g, ''));
+          const name = str.slice(0, m.index).trim();
+          const unit = (m[2] || '').trim();
+          return isFinite(qty) ? { name, qty, unit } : null;
+        };
+        // ตั้งยอดคงเหลือ: สต๊อก <ชื่อ> <จำนวน> [หน่วย]
+        let m = raw.match(/^(?:สต๊อก|สต็อก|สตอก)\s+(.+)$/);
+        if (m) {
+          const p = trailNum(m[1]);
+          if (!p || !p.name) return replyText(ev.replyToken, 'บอกชื่อกับจำนวนด้วยครับ เช่น  สต๊อก หมู 10 กก');
+          const it = await db.setStock(userId, p.name, p.qty, p.unit);
+          const c = flex.stockUpdatedCard('set', it);
+          return replyFlex(ev.replyToken, c.altText, c.contents);
+        }
+        // ดูสต๊อกทั้งหมด
+        if (['สต๊อก', 'สต็อก', 'ดูสต๊อก', 'วัตถุดิบ', 'ของในร้าน', 'คลัง'].includes(raw)) {
+          const rows = await db.listStock(userId);
+          const c = flex.stockListCard(rows, liffUrl());
+          return replyFlex(ev.replyToken, c.altText, c.contents);
+        }
+        // เติมของเข้า (+)
+        m = raw.match(/^(?:เติม|รับของ|เพิ่มสต๊อก|เข้าของ)\s*(.+)$/);
+        if (m) {
+          const p = trailNum(m[1]);
+          if (p && p.name && p.qty > 0) {
+            const r = await db.adjustStock(userId, p.name, p.qty);
+            const c = flex.stockUpdatedCard('add', r.item, p.qty);
+            return replyFlex(ev.replyToken, c.altText, c.contents);
+          }
+        }
+        // ตัดของที่ใช้ (−)
+        m = raw.match(/^(?:ใช้ไป|ใช้|ตัดสต๊อก|ตัดของ|หมดไป)\s*(.+)$/);
+        if (m) {
+          const p = trailNum(m[1]);
+          if (p && p.name && p.qty > 0) {
+            const r = await db.adjustStock(userId, p.name, -p.qty);
+            if (!r.found) return replyText(ev.replyToken, `ยังไม่มี ${p.name} ในสต๊อกครับ\nตั้งก่อนด้วย  สต๊อก ${p.name} <จำนวน>`);
+            const c = flex.stockUpdatedCard('use', r.item, p.qty);
+            return replyFlex(ev.replyToken, c.altText, c.contents);
+          }
+        }
+        // ตั้งจุดเตือนของใกล้หมด
+        m = raw.match(/^(?:เตือน|ตั้งเตือน|แจ้งเตือน)\s*(.+)$/);
+        if (m) {
+          const p = trailNum(m[1]);
+          if (p && p.name && p.qty >= 0) {
+            const r = await db.setThreshold(userId, p.name, p.qty);
+            if (!r.found) return replyText(ev.replyToken, `ยังไม่มี ${p.name} ในสต๊อกครับ\nตั้งก่อนด้วย  สต๊อก ${p.name} <จำนวน>`);
+            return replyText(ev.replyToken, `ตั้งเตือนแล้วครับ 🔔\nถ้า ${r.item.name} เหลือน้อยกว่าหรือเท่ากับ ${baht(p.qty)}${r.item.unit ? ' ' + r.item.unit : ''} ผมจะเตือนให้ซื้อ`);
+          }
+        }
+        // รายการที่ต้องซื้อ (ของใกล้หมด)
+        if (['ของใกล้หมด', 'ต้องซื้อ', 'รายการซื้อ', 'ของหมด', 'ใกล้หมด', 'ต้องซื้ออะไร'].includes(raw)) {
+          const rows = await db.lowStock(userId);
+          const c = flex.lowStockCard(rows, liffUrl());
+          return replyFlex(ev.replyToken, c.altText, c.contents);
+        }
+        // ลบวัตถุดิบ
+        m = raw.match(/^(?:ลบสต๊อก|ลบวัตถุดิบ|เอาออก)\s+(.+)$/);
+        if (m) {
+          const r = await db.removeStock(userId, m[1].trim());
+          if (!r.found) return replyText(ev.replyToken, `ไม่เจอ ${m[1].trim()} ในสต๊อกครับ`);
+          return replyText(ev.replyToken, `ลบ ${r.name} ออกจากสต๊อกแล้วครับ ✅`);
+        }
+      }
+
       { const q = await overQuota(userId); if (q.over) return replyText(ev.replyToken, quotaMessage(q)); }
-      const parsed = await ai.parseText(raw);
-      if (!parsed.is_transaction)
         return replyText(ev.replyToken, parsed.reply_hint ||
           'ขอโทษครับ ผมไม่ค่อยแน่ใจว่าหมายถึงอะไร 🙏\n\n' +
           'จะจดขาย พิมพ์ เช่น  ขายข้าว 50\n' +
@@ -1012,7 +1151,15 @@ async function sendDailySummaries() {
         dateLabel: `${today.slice(8)}/${today.slice(5, 7)}`,
         today: t, yest: y.count ? y : null, link,
       });
-      await linePush(uid, [{ type: 'flex', altText: card.altText, contents: card.contents }]);
+      const msgs = [{ type: 'flex', altText: card.altText, contents: card.contents }];
+      try {
+        const low = await db.lowStock(uid);
+        if (low.length) {
+          const names = low.slice(0, 8).map(r => r.name).join(', ');
+          msgs.push({ type: 'text', text: `🛒 ของใกล้หมด: ${names}\nพิมพ์คำว่า  ต้องซื้อ  เพื่อดูรายการทั้งหมด` });
+        }
+      } catch (e) { /* สต๊อกยังไม่ตั้ง ก็ข้ามไป */ }
+      await linePush(uid, msgs);
       sent++;
       await new Promise(r => setTimeout(r, 120)); // กันยิงถี่เกิน
     } catch (e) { console.error('[dailyPush]', uid.slice(0, 6), e.message); }

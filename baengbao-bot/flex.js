@@ -639,6 +639,16 @@ function helpCarousel(link) {
     cmdLine('ปิดยอด', 'เช็กเงินสดในลิ้นชัก'),
     cmdLine('งบ', 'กำไร–ขาดทุนรายเดือน'),
     sep('lg'),
+    secHead('สต๊อกวัตถุดิบ'),
+    cmdLine('สต๊อก', 'ดู/ตั้งของ เช่น สต๊อก หมู 10 กก'),
+    cmdLine('เติม / ใช้', 'เติมหมู 5 · ใช้หมู 2'),
+    cmdLine('ต้องซื้อ', 'ดูรายการของใกล้หมด'),
+    sep('lg'),
+    secHead('ลูกหนี้ & เจ้าหนี้'),
+    cmdLine('ลูกหนี้', 'ดู/เพิ่มบิลเชื่อ เช่น ลูกหนี้ ป้าแดง 120'),
+    cmdLine('เจ้าหนี้', 'ดู/เพิ่มค้างจ่าย เช่น เจ้าหนี้ เจ๊ผัก 2000'),
+    cmdLine('คงเหลือ', 'ดูสุขภาพร้าน + เงินคงเหลือจริง'),
+    sep('lg'),
     secHead('อื่น ๆ'),
     cmdLine('ลบล่าสุด', 'ลบรายการที่จดผิด'),
     cmdLine('ออกรายงาน', 'ไฟล์ Excel ส่งบัญชี'),
@@ -678,8 +688,152 @@ function howToCard(link) {
   };
 }
 
+// ===== เฟส 28: ลูกหนี้-เจ้าหนี้ + สุขภาพร้าน =====
+function debtAddedCard(direction, party, added, remaining, link) {
+  const isRecv = direction === 'receivable';
+  const title = isRecv ? 'บันทึกลูกหนี้แล้ว' : 'บันทึกเจ้าหนี้แล้ว';
+  const hint = isRecv
+    ? `พอเก็บเงินได้ พิมพ์  รับเงิน ${party}`
+    : `พอจ่ายแล้ว พิมพ์  จ่ายหนี้ ${party}`;
+  const body = [
+    statRow(party, `+${baht(added)} ฿`, isRecv ? C.green : C.warn, true),
+    sol(`ยอดค้างรวมของ ${party}: ${baht(remaining)} ฿`, C.soft, { size: 'xs', wrap: true }),
+    sep('md'),
+    sol(hint, C.blueDeep, { size: 'sm', wrap: true }),
+  ];
+  return {
+    altText: `${title} ${party} ${baht(added)} ฿`,
+    contents: bubble({ headerBox: header(title, isRecv ? 'ลูกค้าติดเรา' : 'เราติดร้านอื่น', isRecv ? C.green : C.warn), bodyContents: body, footerButton: linkButton('เปิดแอปดูทั้งหมด', link) }),
+  };
+}
+
+function debtSettledCard(direction, party, applied, remaining) {
+  const isRecv = direction === 'receivable';
+  const title = isRecv ? 'รับเงินแล้ว ✅' : 'จ่ายหนี้แล้ว ✅';
+  const money = isRecv ? 'บันทึกเป็นรายรับให้แล้ว' : 'บันทึกเป็นรายจ่ายให้แล้ว';
+  const remLine = remaining > 0.0001
+    ? sol(`เหลือค้างอีก ${baht(remaining)} ฿`, C.soft, { size: 'sm' })
+    : sol('เคลียร์ครบแล้ว 🎉', C.green, { size: 'sm', weight: 'bold' });
+  const body = [
+    statRow(party, `${baht(applied)} ฿`, isRecv ? C.green : C.warn, true),
+    remLine,
+    sep('md'),
+    sol(money, C.soft, { size: 'xs' }),
+  ];
+  return {
+    altText: `${title} ${party} ${baht(applied)} ฿`,
+    contents: bubble({ headerBox: header(title, isRecv ? 'รับชำระจากลูกค้า' : 'ชำระให้ร้านค้า', C.green), bodyContents: body }),
+  };
+}
+
+function debtListCard(direction, rows, link) {
+  const isRecv = direction === 'receivable';
+  const title = isRecv ? 'ลูกค้าที่ติดเงินเรา' : 'เราติดร้านอื่น';
+  const color = isRecv ? C.green : C.warn;
+  let body;
+  if (!rows.length) {
+    body = [sol('ยังไม่มียอดค้างครับ 👍', C.soft, { size: 'sm', wrap: true })];
+  } else {
+    const total = rows.reduce((s, r) => s + r.remaining, 0);
+    const settleHint = isRecv ? 'เก็บเงินได้แล้ว พิมพ์  รับเงิน ตามด้วยชื่อ' : 'จ่ายแล้ว พิมพ์  จ่ายหนี้ ตามด้วยชื่อ';
+    body = [
+      ...rows.slice(0, 12).map(r => statRow(r.party, `${baht(r.remaining)} ฿`, color)),
+      sep('md'),
+      statRow('รวมค้าง', `${baht(total)} ฿`, color, true),
+      sol(settleHint, C.blueDeep, { size: 'xs', wrap: true, margin: 'md' }),
+    ];
+  }
+  return {
+    altText: `${title} (${rows.length} ราย)`,
+    contents: bubble({ headerBox: header(title, `${rows.length} ราย`, color), bodyContents: body, footerButton: linkButton('เปิดแอปจัดการ', link) }),
+  };
+}
+
+function healthCard({ monthLabel, month, debt }) {
+  const net = (debt.receivable || 0) - (debt.payable || 0);
+  const body = [
+    sol('เดือนนี้ (เงินสดที่จดจริง)', C.blue, { size: 'xs', weight: 'bold' }),
+    statRow('รายรับ', `+${baht(month.income)} ฿`, C.green),
+    statRow('รายจ่าย', `−${baht(month.expense)} ฿`, C.danger),
+    statRow('กำไร', `${month.profit >= 0 ? '+' : '−'}${baht(Math.abs(month.profit))} ฿`, month.profit >= 0 ? C.green : C.danger, true),
+    sep('lg'),
+    sol('หนี้คงค้าง', C.blue, { size: 'xs', weight: 'bold', margin: 'md' }),
+    statRow(`ลูกค้าติดเรา (${debt.receivableCount || 0} ราย)`, `+${baht(debt.receivable)} ฿`, C.green),
+    statRow(`เราติดร้านอื่น (${debt.payableCount || 0} ราย)`, `−${baht(debt.payable)} ฿`, C.warn),
+    sep('md'),
+    statRow('สุทธิหนี้', `${net >= 0 ? '+' : '−'}${baht(Math.abs(net))} ฿`, net >= 0 ? C.green : C.danger, true),
+    sol(net >= 0 ? 'ถ้าเก็บ-จ่ายหนี้ครบ จะมีเงินไหลเข้าสุทธิ' : 'ระวัง: หนี้ที่ต้องจ่ายมากกว่าที่จะได้คืน', C.soft, { size: 'xs', wrap: true, margin: 'md' }),
+  ];
+  return {
+    altText: `สุขภาพร้าน ${monthLabel}`,
+    contents: bubble({ headerBox: header('สุขภาพร้าน', monthLabel, C.blueDeep), bodyContents: body }),
+  };
+}
+
+// ===== เฟส 29: สต๊อกวัตถุดิบ =====
+function stockUpdatedCard(mode, item, delta) {
+  const unit = item.unit ? ' ' + item.unit : '';
+  const title = mode === 'add' ? 'เติมของแล้ว ✅' : mode === 'use' ? 'ตัดสต๊อกแล้ว ✅' : 'ตั้งสต๊อกแล้ว ✅';
+  const headColor = item.low ? C.warn : C.green;
+  const body = [
+    statRow(item.name, `${baht(item.qty)}${unit}`, item.low ? C.warn : C.ink, true),
+  ];
+  if (delta != null) body.push(sol(`${mode === 'add' ? 'เพิ่ม' : 'ตัด'} ${baht(delta)}${unit}`, C.soft, { size: 'xs' }));
+  if (item.low) {
+    body.push(sep('md'));
+    body.push(sol(`🔔 เหลือน้อยแล้ว (เตือนที่ ${baht(item.low_threshold)}${unit}) — ควรซื้อเพิ่ม`, C.warn, { size: 'sm', wrap: true }));
+  }
+  return {
+    altText: `${title} ${item.name} ${baht(item.qty)}${unit}`,
+    contents: bubble({ headerBox: header(title, 'สต๊อกวัตถุดิบ', headColor), bodyContents: body }),
+  };
+}
+
+function stockListCard(rows, link) {
+  let body;
+  if (!rows.length) {
+    body = [sol('ยังไม่มีวัตถุดิบในระบบครับ', C.soft, { size: 'sm', wrap: true }),
+      sol('เพิ่มได้เลย เช่น  สต๊อก หมู 10 กก', C.blueDeep, { size: 'sm', wrap: true, margin: 'sm' })];
+  } else {
+    const lowN = rows.filter(r => r.low).length;
+    body = rows.slice(0, 14).map(r => statRow(
+      `${r.low ? '🔴 ' : ''}${r.name}`,
+      `${baht(r.qty)}${r.unit ? ' ' + r.unit : ''}`,
+      r.low ? C.warn : C.ink
+    ));
+    if (lowN) {
+      body.push(sep('md'));
+      body.push(sol(`🔔 ใกล้หมด ${lowN} อย่าง — พิมพ์  ต้องซื้อ  เพื่อดูรายการ`, C.warn, { size: 'xs', wrap: true }));
+    }
+  }
+  return {
+    altText: `สต๊อกวัตถุดิบ (${rows.length} อย่าง)`,
+    contents: bubble({ headerBox: header('สต๊อกวัตถุดิบ', `${rows.length} อย่าง`, C.blueDeep), bodyContents: body, footerButton: linkButton('เปิดแอปจัดการ', link) }),
+  };
+}
+
+function lowStockCard(rows, link) {
+  let body;
+  if (!rows.length) {
+    body = [sol('ของครบ ไม่มีอะไรใกล้หมดครับ 👍', C.green, { size: 'sm', weight: 'bold', wrap: true })];
+  } else {
+    body = [
+      sol('ควรซื้อเพิ่มก่อนหมด', C.soft, { size: 'xs', margin: 'none' }),
+      ...rows.slice(0, 16).map(r => statRow(r.name, `เหลือ ${baht(r.qty)}${r.unit ? ' ' + r.unit : ''}`, C.warn)),
+      sep('md'),
+      sol('ซื้อมาแล้วเติมสต๊อกด้วย  เติม ตามด้วยชื่อ+จำนวน', C.blueDeep, { size: 'xs', wrap: true }),
+    ];
+  }
+  return {
+    altText: `รายการต้องซื้อ (${rows.length} อย่าง)`,
+    contents: bubble({ headerBox: header('รายการต้องซื้อ 🛒', `${rows.length} อย่าง`, rows.length ? C.warn : C.green), bodyContents: body, footerButton: linkButton('เปิดแอปจัดการ', link) }),
+  };
+}
+
 module.exports = {
   confirmCard, summaryCard, deliveryCard, menuProfitCard, menuLinkCard, dailyPushCard,
   goalCard, goalReachedCard, costCompareCard, exportCard, weeklyCard, welcomeCarousel,
   breakEvenCard, cashCloseCard, plCard, membershipCard, helpCarousel, howToCard,
+  debtAddedCard, debtSettledCard, debtListCard, healthCard,
+  stockUpdatedCard, stockListCard, lowStockCard,
 };
