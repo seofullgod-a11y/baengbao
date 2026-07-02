@@ -271,6 +271,17 @@
   .sf-act{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
   .sf-act button{flex:1;min-width:72px;border:1px solid var(--border);background:#f6f9ff;color:var(--blue);border-radius:8px;padding:8px 4px;font-family:"Kanit";font-weight:600;font-size:12.5px;cursor:pointer}
   .sf-act button.ic{flex:none;min-width:0;padding:8px 10px}
+  /* vat */
+  .vat-toggle{display:flex;align-items:center;justify-content:space-between;background:#fff;border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:14px}
+  .vat-toggle .vt-t{font-family:"Kanit";font-weight:700;font-size:15px;color:var(--ink)}
+  .vat-toggle .vt-s{font-size:12.5px;color:var(--ink-soft);margin-top:2px}
+  .vt-btn{border:none;border-radius:9px;padding:9px 18px;font-family:"Kanit";font-weight:600;font-size:14px;cursor:pointer;background:var(--blue);color:#fff}
+  .vt-btn.on{background:#fdeceb;color:var(--danger,#e5484d)}
+  .vat-h{font-family:"Kanit";font-weight:700;font-size:15px;color:var(--blue-deep);margin-bottom:8px}
+  .vrow{display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:14px;color:var(--ink-soft)}
+  .vrow b{font-family:"Kanit";font-size:15px;color:var(--ink)}
+  .vrow.big{font-size:15px}.vrow.big b{font-size:19px}
+  .vsep{height:1px;background:var(--border);margin:8px 0}
 </style>
 </head>
 <body>
@@ -305,6 +316,7 @@
       <button class="nav-item" data-view="recipes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3h16v4H4z"/><path d="M6 7v14h12V7"/><path d="M9 11h6"/></svg>สูตรอาหาร</button>
     </div>
     <div class="nav-group"><div class="nav-gh">อื่น ๆ</div>
+      <button class="nav-item" data-view="vat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14l6-6"/><circle cx="9.5" cy="8.5" r="1.5"/><circle cx="14.5" cy="14.5" r="1.5"/><rect x="3" y="3" width="18" height="18" rx="3"/></svg>ภาษี (VAT)</button>
       <button class="nav-item" data-view="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>ตั้งค่า</button>
     </div>
   </div>
@@ -405,6 +417,13 @@
   </div>
 </div>
 
+<!-- VAT VIEW -->
+<div class="view" id="view-vat">
+  <div class="wrap">
+    <div id="vatBox"><div class="loading"><div class="spin"></div>กำลังโหลด...</div></div>
+  </div>
+</div>
+
 <button class="fab" id="addBtn">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>เพิ่มเมนู
 </button>
@@ -472,7 +491,7 @@ function switchTab(name){
   if(MAIN_TABS.includes(name)){ const el=document.querySelector('.tab[data-view="'+name+'"]'); if(el) el.classList.add('active'); }
   else { $('moreTab').classList.add('active'); }
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.view===name));
-  ['menu','report','goals','settings','stock','debts','recipes','staff'].forEach(v=>$('view-'+v).classList.toggle('active',name===v));
+  ['menu','report','goals','settings','stock','debts','recipes','staff','vat'].forEach(v=>$('view-'+v).classList.toggle('active',name===v));
   $('addBtn').classList.toggle('hide',name!=='menu');
   try{ window.scrollTo(0,0); }catch(e){}
   if(name==='report'){ if(!curMonth){curMonth=thisMonth();} loadReport(); if(!costLoaded){loadCostCompare();costLoaded=true;} }
@@ -482,6 +501,7 @@ function switchTab(name){
   if(name==='debts'){ loadDebts(); }
   if(name==='recipes'){ loadRecipes(); }
   if(name==='staff'){ loadStaff(); }
+  if(name==='vat'){ loadVat(); }
   closeMenu();
 }
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
@@ -873,6 +893,56 @@ async function sfAdd(){
   if(!name||!(dayWage>=0)){toast('ใส่ชื่อและค่าแรง');return;}
   try{await api('/api/staff',{method:'POST',body:JSON.stringify({name,dayWage})});
     $('sfName').value='';$('sfWage').value='';toast('เพิ่มแล้ว');loadStaff();}
+  catch(e){toast('ไม่สำเร็จ');}
+}
+
+/* ---------- vat tab ---------- */
+async function loadVat(){
+  $('vatBox').innerHTML='<div class="loading"><div class="spin"></div>กำลังโหลด...</div>';
+  try{
+    const d=await api('/api/vat');
+    const cfg=d.config, s=d.summary, r=n=>baht(Math.round(n));
+    let html=`<div class="vat-toggle">
+      <div><div class="vt-t">ระบบภาษีมูลค่าเพิ่ม</div><div class="vt-s">${cfg.enabled?('เปิดอยู่ · อัตรา '+cfg.rate+'%'):'ปิดอยู่'}</div></div>
+      <button class="vt-btn ${cfg.enabled?'on':''}" onclick="vatToggle(${!cfg.enabled})">${cfg.enabled?'ปิด':'เปิด'}</button>
+    </div>`;
+    if(!cfg.enabled){
+      html+=`<div class="empty"><p>ร้านที่จดทะเบียน VAT (รายได้เกิน 1.8 ล้าน/ปี)<br><small>กดเปิดด้านบนเพื่อสรุปภาษีขาย-ภาษีซื้อรายเดือน</small></p></div>`;
+    }else{
+      const payable=s.payable;
+      html+=`<div class="panel">
+        <div class="vat-h">สรุปภาษี · ${d.month}</div>
+        <div class="vrow"><span>ยอดขาย</span><b>${r(s.sales)} ฿</b></div>
+        <div class="vrow"><span>ภาษีขาย</span><b style="color:#00a86b">${r(s.outputVat)} ฿</b></div>
+        <div class="vsep"></div>
+        <div class="vrow"><span>ยอดซื้อ (มีใบกำกับ)</span><b>${r(s.vatPurchases)} ฿</b></div>
+        <div class="vrow"><span>ภาษีซื้อ</span><b style="color:#f0883e">−${r(s.inputVat)} ฿</b></div>
+        <div class="vsep"></div>
+        <div class="vrow big"><span>${payable>=0?'ภาษีที่ต้องนำส่ง':'ภาษีขอคืน/ยกไป'}</span><b style="color:${payable>=0?'#e5484d':'#00a86b'}">${r(Math.abs(payable))} ฿</b></div>
+      </div>
+      <div class="rc-add" style="margin-top:14px">
+        <div style="font-family:Kanit;font-weight:600;font-size:14px;margin-bottom:8px">+ บันทึกภาษีซื้อ (ค่าใช้จ่ายที่มีใบกำกับ)</div>
+        <div class="stock-add" style="padding:0;border:none;margin:0">
+          <input id="vatNote" placeholder="รายการ เช่น วัตถุดิบ" style="flex:2" />
+          <input id="vatAmt" type="number" inputmode="decimal" placeholder="ยอดรวม" style="flex:1" />
+          <button id="vatAddBtn">เพิ่ม</button>
+        </div>
+      </div>
+      <p style="font-size:11.5px;color:#8197b8;margin-top:10px;line-height:1.5">* ราคาถือว่ารวมภาษี ${cfg.rate}% แล้ว · ตัวเลขเป็นการประมาณจากที่จด ยื่นจริงควรตรวจกับผู้ทำบัญชี</p>`;
+    }
+    $('vatBox').innerHTML=html;
+    const ab=$('vatAddBtn'); if(ab) ab.addEventListener('click',vatAddPurchase);
+    const rateSel=$('vatRate'); if(rateSel) rateSel.addEventListener('change',()=>vatToggle(true,parseFloat(rateSel.value)));
+  }catch(e){$('vatBox').innerHTML='<div class="empty"><p>โหลดไม่สำเร็จ<br><small>'+escapeHtml(e.message||'')+'</small></p></div>';}
+}
+window.vatToggle=async function(enabled,rate){
+  try{await api('/api/vat/config',{method:'POST',body:JSON.stringify({enabled,rate})});toast(enabled?'เปิดภาษีแล้ว':'ปิดภาษีแล้ว');loadVat();}
+  catch(e){toast('ไม่สำเร็จ');}
+};
+async function vatAddPurchase(){
+  const amount=parseFloat($('vatAmt').value), note=$('vatNote').value.trim();
+  if(!(amount>0)){toast('ใส่ยอด');return;}
+  try{await api('/api/vat/purchase',{method:'POST',body:JSON.stringify({amount,note})});toast('บันทึกภาษีซื้อแล้ว');loadVat();}
   catch(e){toast('ไม่สำเร็จ');}
 }
 

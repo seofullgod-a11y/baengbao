@@ -928,6 +928,52 @@ async function handleEvent(ev) {
         }
       }
 
+      // ===== เฟส 34: ภาษีมูลค่าเพิ่ม (VAT) =====
+      {
+        // เปิด/ปิด ระบบภาษี
+        if (['เปิดภาษี', 'เปิด vat', 'เปิดVAT', 'เปิดแวต'].includes(raw)) {
+          const c = await db.setVatConfig(userId, true, null);
+          return replyText(ev.replyToken, `เปิดระบบภาษีมูลค่าเพิ่มแล้วครับ ✅ (${c.rate}%)\nพิมพ์  ภาษี  เพื่อดูสรุปภาษีเดือนนี้\nซื้อของที่มีใบกำกับ ให้พิมพ์  ภาษีซื้อ <ยอด>  เพื่อเก็บภาษีซื้อไปหักได้`);
+        }
+        if (['ปิดภาษี', 'ปิด vat', 'ปิดVAT', 'ปิดแวต'].includes(raw)) {
+          await db.setVatConfig(userId, false, null);
+          return replyText(ev.replyToken, 'ปิดระบบภาษีมูลค่าเพิ่มแล้วครับ');
+        }
+        // ตั้งอัตราภาษี
+        let m = raw.match(/^ตั้งภาษี\s*([\d.]+)\s*%?$/);
+        if (m) {
+          const rate = parseFloat(m[1]);
+          if (rate >= 0 && rate <= 30) {
+            const c = await db.setVatConfig(userId, true, rate);
+            return replyText(ev.replyToken, `ตั้งอัตราภาษีเป็น ${c.rate}% และเปิดใช้งานแล้วครับ ✅`);
+          }
+        }
+        // บันทึกภาษีซื้อ (ค่าใช้จ่ายที่มีใบกำกับภาษี)
+        m = raw.match(/^(?:ภาษีซื้อ|ซื้อมีใบกำกับ|vatซื้อ)\s+(.+)$/i);
+        if (m) {
+          const mm = m[1].match(/([\d,]+(?:\.\d+)?)\s*(?:บาท|฿)?\s*(.*)$/);
+          const amount = mm ? Number(mm[1].replace(/,/g, '')) : NaN;
+          if (isFinite(amount) && amount > 0) {
+            const note = (mm[2] || '').trim() || 'ซื้อของ (มีใบกำกับ)';
+            const cfg = await db.getVatConfig(userId);
+            await db.insertTxn({ lineUserId: userId, type: 'expense', amount, category: 'ซื้อของ', note, items: null, source: 'vat', txnDate: bkkDate(), vat: 1 });
+            const vatPart = amount * (cfg.rate || 7) / (100 + (cfg.rate || 7));
+            return replyText(ev.replyToken, `บันทึกภาษีซื้อแล้วครับ ✅\n${note} ${baht(amount)} บาท\nภาษีซื้อที่หักได้ ~${baht(Math.round(vatPart * 100) / 100)} บาท (${cfg.rate}%)`);
+          }
+        }
+        // สรุปภาษีเดือนนี้
+        if (['ภาษี', 'vat', 'VAT', 'แวต', 'ภพ30', 'ภ.พ.30', 'ภ.พ. 30'].includes(raw)) {
+          const cfg = await db.getVatConfig(userId);
+          if (!cfg.enabled) {
+            return replyText(ev.replyToken, 'ยังไม่ได้เปิดระบบภาษีครับ\nถ้าร้านจดทะเบียน VAT แล้ว พิมพ์  เปิดภาษี  เพื่อเริ่มสรุปภาษีขาย-ภาษีซื้อรายเดือน\n(ปกติร้านที่รายได้เกิน 1.8 ล้าน/ปี ต้องจด VAT)');
+          }
+          const ym = bkkDate().slice(0, 7);
+          const s = await db.vatSummary(userId, ym);
+          const c = flex.vatCard(xlsx.thMonthLabel(ym), s);
+          return replyFlex(ev.replyToken, c.altText, c.contents);
+        }
+      }
+
       { const q = await overQuota(userId); if (q.over) return replyText(ev.replyToken, quotaMessage(q)); }
         return replyText(ev.replyToken, parsed.reply_hint ||
           'ขอโทษครับ ผมไม่ค่อยแน่ใจว่าหมายถึงอะไร 🙏\n\n' +
@@ -1100,7 +1146,7 @@ app.post('/admin/api/richmenu',
     }
     try {
       const ct = req.get('content-type') && req.get('content-type').includes('jpeg') ? 'image/jpeg' : 'image/png';
-      const id = await richmenu.setupRichMenuFromBuffer(process.env.CHANNEL_TOKEN, buf, ct);
+      const id = await richmenu.setupRichMenuFromBuffer(CHANNEL_TOKEN, buf, ct);
       res.json({ ok: true, richMenuId: id });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -1180,7 +1226,7 @@ async function liffAuth(req, res, next) {
   }
 }
 
-app.use(['/api/menus', '/api/stats', '/api/transactions', '/api/goals', '/api/cost-compare', '/api/settings', '/api/export-link', '/api/recurring', '/api/stock', '/api/debts', '/api/recipes', '/api/staff'], express.json(), liffAuth);
+app.use(['/api/menus', '/api/stats', '/api/transactions', '/api/goals', '/api/cost-compare', '/api/settings', '/api/export-link', '/api/recurring', '/api/stock', '/api/debts', '/api/recipes', '/api/staff', '/api/vat'], express.json(), liffAuth);
 
 app.get('/api/menus', async (req, res) => {
   await db.upsertUser(req.identityId, req.displayName);
@@ -1367,6 +1413,31 @@ app.post('/api/staff/log', async (req, res) => {
 app.post('/api/staff/remove', async (req, res) => {
   const r = await db.removeStaff(req.userId, String((req.body || {}).name || '').trim());
   res.json({ ok: r.found });
+});
+
+// ---- เฟส 34: ภาษีมูลค่าเพิ่ม (VAT) ----
+app.get('/api/vat', async (req, res) => {
+  const ym = bkkDate().slice(0, 7);
+  const [config, summary] = await Promise.all([db.getVatConfig(req.userId), db.vatSummary(req.userId, ym)]);
+  res.json({ config, summary, month: xlsx.thMonthLabel(ym) });
+});
+app.post('/api/vat/config', async (req, res) => {
+  const { enabled, rate } = req.body || {};
+  const r = rate == null || rate === '' ? null : +rate;
+  if (r != null && (!(r >= 0) || r > 30)) return res.status(400).json({ error: 'อัตราไม่ถูกต้อง' });
+  const config = await db.setVatConfig(req.userId, !!enabled, r);
+  res.json({ ok: true, config });
+});
+app.post('/api/vat/purchase', async (req, res) => {
+  const { amount, note } = req.body || {};
+  if (!(+amount > 0)) return res.status(400).json({ error: 'ยอดต้องมากกว่า 0' });
+  await db.insertTxn({
+    lineUserId: req.userId, type: 'expense', amount: +amount, category: 'ซื้อของ',
+    note: (note || '').trim() || 'ซื้อของ (มีใบกำกับ)', items: null, source: 'app', txnDate: bkkDate(), vat: 1,
+  });
+  const ym = bkkDate().slice(0, 7);
+  const summary = await db.vatSummary(req.userId, ym);
+  res.json({ ok: true, summary });
 });
 
 // ---- เฟส 8: เป้ายอดขาย ----

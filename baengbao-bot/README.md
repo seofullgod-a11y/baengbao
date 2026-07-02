@@ -708,3 +708,25 @@ push richmenu.png (binary) + richmenu.js แล้วเปิด /admin/setup-r
 - API: POST /admin/api/richmenu (raw image + x-admin-key) → ตรวจขนาดจาก byte header (PNG IHDR / JPEG SOF) → richmenu.setupRichMenuFromBuffer (ลบเก่า→สร้าง→อัปโหลด→ตั้ง default ให้ทุกคน)
 - richmenu.js: เพิ่ม setupRichMenuFromBuffer(token, buffer, contentType)
 - ไฟล์: server.js, richmenu.js, public/admin.html
+
+---
+
+# เฟส 34 — ภาษีมูลค่าเพิ่ม (VAT) [คลื่นที่ 3 เริ่ม]
+
+สรุปภาษีขาย-ภาษีซื้อรายเดือน (แบบ ภ.พ.30 อย่างง่าย) สำหรับร้านที่จด VAT
+
+## คำสั่ง
+- **เปิดภาษี** / **ปิดภาษี** — เปิด/ปิดระบบ VAT
+- **ตั้งภาษี 7** — ตั้งอัตรา (ค่าเริ่ม 7%)
+- **ภาษีซื้อ <ยอด> [รายการ]** — บันทึกค่าใช้จ่ายที่มีใบกำกับภาษี (เก็บภาษีซื้อไปหัก) → ลงเป็นรายจ่าย vat=1
+- **ภาษี** / **vat** / **ภ.พ.30** — สรุปภาษีเดือนนี้
+
+## หลักคิด
+- ราคาถือว่ารวมภาษีแล้ว (มาตรฐานค้าปลีกไทย): ภาษีขาย = ยอดขาย × rate/(100+rate)
+- ภาษีซื้อ = ยอดซื้อที่มีใบกำกับ (vat=1) × rate/(100+rate)
+- ภาษีที่ต้องนำส่ง = ภาษีขาย − ภาษีซื้อ (ติดลบ = ขอคืน/ยกไป)
+
+## เทคนิค
+- db: users.vat_enabled/vat_rate, transactions.vat (ALTER ADD) · insertTxn รับ vat · helpers getVatConfig/setVatConfig/vatSummary (SUM FILTER + to_char เหมือน monthTotals)
+- flex: vatCard · mini app: แท็บ "ภาษี (VAT)" ใน More menu (toggle + สรุป + ฟอร์มภาษีซื้อ) · API /api/vat (+config +purchase)
+- เพิ่มคำสั่งในการ์ดช่วย

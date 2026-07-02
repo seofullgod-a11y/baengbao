@@ -658,6 +658,11 @@ function helpCarousel(link) {
     cmdLine('ลงเวลา / เบิก', 'ลงเวลา สมชาย · เบิก สมชาย 500'),
     cmdLine('จ่ายค่าแรง', 'จ่ายค่าแรง สมชาย 2000'),
     sep('lg'),
+    secHead('ภาษี (VAT)'),
+    cmdLine('เปิดภาษี', 'เริ่มสรุปภาษีขาย-ซื้อ (ร้านจด VAT)'),
+    cmdLine('ภาษี', 'ดูสรุปภาษีเดือนนี้ (ภ.พ.30)'),
+    cmdLine('ภาษีซื้อ', 'บันทึกซื้อที่มีใบกำกับ เช่น ภาษีซื้อ 5350'),
+    sep('lg'),
     secHead('อื่น ๆ'),
     cmdLine('ลบล่าสุด', 'ลบรายการที่จดผิด'),
     cmdLine('ออกรายงาน', 'ไฟล์ Excel ส่งบัญชี'),
@@ -927,6 +932,28 @@ function staffPayCard(kind, name, amount, sum) {
   return { altText: `${title} ${name} ${baht(amount)} ฿`, contents: bubble({ headerBox: header(title, kind === 'advance' ? 'เบิกล่วงหน้า' : 'จ่ายค่าแรง', C.green), bodyContents: body }) };
 }
 
+// ===== เฟส 34: ภาษีมูลค่าเพิ่ม (VAT) =====
+function vatCard(monthLabel, s) {
+  const r = n => baht(Math.round(n));
+  const payable = s.payable;
+  const body = [
+    sol(`ราคาถือว่ารวมภาษี ${s.rate}% แล้ว`, C.soft, { size: 'xs' }),
+    statRow('ยอดขาย', `${r(s.sales)} ฿`, C.ink),
+    statRow('ภาษีขาย', `${r(s.outputVat)} ฿`, C.green),
+    sep('md'),
+    statRow('ยอดซื้อ (มีใบกำกับ)', `${r(s.vatPurchases)} ฿`, C.ink),
+    statRow('ภาษีซื้อ', `−${r(s.inputVat)} ฿`, C.warn),
+    sep('lg'),
+    statRow(payable >= 0 ? 'ภาษีที่ต้องนำส่ง' : 'ภาษีขอคืน/ยกไป', `${r(Math.abs(payable))} ฿`, payable >= 0 ? C.danger : C.green, true),
+    sol('บันทึกภาษีซื้อเพิ่ม พิมพ์  ภาษีซื้อ <ยอด>', C.blueDeep, { size: 'xs', wrap: true, margin: 'md' }),
+    sol('ตัวเลขนี้เป็นการประมาณจากที่จด — ยื่นจริงควรตรวจกับผู้ทำบัญชี', C.soft, { size: 'xxs', wrap: true }),
+  ];
+  return {
+    altText: `สรุปภาษี ${monthLabel} · นำส่ง ${r(Math.abs(payable))} ฿`,
+    contents: bubble({ headerBox: header('สรุปภาษี (VAT)', monthLabel, C.blueDeep), bodyContents: body }),
+  };
+}
+
 module.exports = {
   confirmCard, summaryCard, deliveryCard, menuProfitCard, menuLinkCard, dailyPushCard,
   goalCard, goalReachedCard, costCompareCard, exportCard, weeklyCard, welcomeCarousel,
@@ -935,4 +962,5 @@ module.exports = {
   stockUpdatedCard, stockListCard, lowStockCard,
   recipeCard, recipeListCard,
   staffAddedCard, staffListCard, staffDetailCard, staffPayCard,
+  vatCard,
 };

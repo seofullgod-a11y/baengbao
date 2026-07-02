@@ -65,6 +65,10 @@ async function init() {
   // เฟส 20: ระบบร้าน/พนักงาน (ใช้บัญชีข้อมูลร่วมกัน)
   // เฟส 23: โหมดมือใหม่ (สอนทีละขั้น) — 0/NULL=ไม่อยู่ในโหมดสอน, 1..=ขั้นที่กำลังสอน
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS onboard_step INT DEFAULT 0;`);
+  // เฟส 34: ภาษีมูลค่าเพิ่ม (VAT)
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vat_enabled BOOLEAN DEFAULT FALSE;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vat_rate NUMERIC NOT NULL DEFAULT 7;`);
+  await pool.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS vat SMALLINT NOT NULL DEFAULT 0;`);
   // เฟส 28: ลูกหนี้-เจ้าหนี้ (บิลเชื่อ / ค้างจ่ายซัพพลายเออร์)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS debts (
@@ -657,13 +661,42 @@ async function upsertUser(lineUserId, displayName) {
 }
 
 async function insertTxn(t) {
-  const { lineUserId, type, amount, category, note, items, source, txnDate } = t;
+  const { lineUserId, type, amount, category, note, items, source, txnDate, vat } = t;
   const { rows } = await pool.query(
-    `INSERT INTO transactions (line_user_id, type, amount, category, note, items, source, txn_date)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-    [lineUserId, type, amount, category || null, note || null, items ? JSON.stringify(items) : null, source || 'text', txnDate]
+    `INSERT INTO transactions (line_user_id, type, amount, category, note, items, source, txn_date, vat)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+    [lineUserId, type, amount, category || null, note || null, items ? JSON.stringify(items) : null, source || 'text', txnDate, vat ? 1 : 0]
   );
   return rows[0].id;
+}
+
+// ===== เฟส 34: ภาษีมูลค่าเพิ่ม (VAT) =====
+async function getVatConfig(lineUserId) {
+  const { rows } = await pool.query(`SELECT COALESCE(vat_enabled,FALSE) AS enabled, COALESCE(vat_rate,7) AS rate FROM users WHERE line_user_id=$1`, [lineUserId]);
+  const r = rows[0] || {};
+  return { enabled: !!r.enabled, rate: +r.rate || 7 };
+}
+async function setVatConfig(lineUserId, enabled, rate) {
+  await upsertUser(lineUserId, null);
+  if (rate == null) await pool.query(`UPDATE users SET vat_enabled=$2 WHERE line_user_id=$1`, [lineUserId, !!enabled]);
+  else await pool.query(`UPDATE users SET vat_enabled=$2, vat_rate=$3 WHERE line_user_id=$1`, [lineUserId, !!enabled, +rate]);
+  return getVatConfig(lineUserId);
+}
+// สรุป VAT รายเดือน — ราคาถือว่ารวมภาษีแล้ว (มาตรฐานค้าปลีกไทย)
+async function vatSummary(lineUserId, ym) {
+  const cfg = await getVatConfig(lineUserId);
+  const rate = cfg.rate || 7;
+  const { rows } = await pool.query(
+    `SELECT
+       COALESCE(SUM(amount) FILTER (WHERE type='income'), 0) AS sales,
+       COALESCE(SUM(amount) FILTER (WHERE type='expense' AND vat=1), 0) AS vatpur
+     FROM transactions WHERE line_user_id=$1 AND to_char(txn_date,'YYYY-MM')=$2`,
+    [lineUserId, ym]
+  );
+  const sales = +rows[0].sales, vatpur = +rows[0].vatpur;
+  const outputVat = sales * rate / (100 + rate);
+  const inputVat = vatpur * rate / (100 + rate);
+  return { rate, sales, vatPurchases: vatpur, outputVat, inputVat, payable: outputVat - inputVat };
 }
 
 async function dayTotals(lineUserId, dateStr) {
@@ -894,6 +927,7 @@ module.exports = {
   dailySeries, categoryBreakdown, recentTxns, deleteTxn, updateTxn, currentStreak,
   bumpUsage, setDailySummary, activeUsersForDaily, usersToRemind, getState, setState,
   setGoal, getGoals, getDailySummary, categoryCompare, txnsForMonth,
+  getVatConfig, setVatConfig, vatSummary,
   setCashFloat, getCashFloat, cashTotalsForDay, recurringMonthlyTotal, incomeSplitForMonth,
   getMembership, setMembership, usageToday, listUsersAdmin,
   accountOf, ensureInvite, findByInvite, joinShop, leaveShop, listShopMembers, countMembers,
