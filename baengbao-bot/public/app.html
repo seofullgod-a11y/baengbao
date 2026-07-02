@@ -28,19 +28,29 @@
   header .logo{width:38px;height:38px;border-radius:11px;background:transparent;display:grid;place-items:center;flex:none;overflow:hidden}
   header .logo svg{width:22px;height:22px}
   header .logo img{width:100%;height:100%;object-fit:cover;display:block}
-  header h1{font-size:19px;font-weight:700;line-height:1.2}
-  header p{font-size:13px;opacity:.85;margin-top:1px}
+  header .hb{flex:none;width:40px;height:40px;border:none;background:rgba(255,255,255,.16);color:#fff;border-radius:10px;display:grid;place-items:center;cursor:pointer;margin-right:4px}
+  header .hb svg{width:22px;height:22px}
+  header h1{font-size:18px;font-weight:700;line-height:1.2}
+  header p{font-size:12px;opacity:.85;margin-top:1px}
 
-  .tabs{position:sticky;top:0;z-index:30;background:linear-gradient(150deg,var(--blue),var(--blue-deep));padding-bottom:0}
-  .tabs .wrap{display:flex;gap:2px}
-  .tab{flex:1;text-align:center;padding:9px 0 9px;color:rgba(255,255,255,.7);font-family:"Kanit";font-weight:600;font-size:11px;border-bottom:3px solid transparent;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;line-height:1}
-  .tab svg{width:19px;height:19px}
-  .subtabs{background:#eef4ff;border-bottom:1px solid var(--border)}
-  .subtabs .wrap{display:flex;gap:6px;padding:8px 16px;overflow-x:auto}
-  .subtab{flex:none;padding:7px 14px;border-radius:20px;background:#fff;border:1px solid var(--border);color:var(--ink-soft);font-family:"Kanit";font-weight:600;font-size:13px;cursor:pointer;white-space:nowrap}
-  .subtab.active{background:var(--blue);border-color:var(--blue);color:#fff}
   .hide{display:none!important}
-  .tab.active{color:#fff;border-bottom-color:#fff}
+  .drawer-bg{position:fixed;inset:0;background:rgba(10,31,68,.45);z-index:60}
+  .drawer{position:fixed;top:0;left:0;bottom:0;width:82%;max-width:320px;background:#fff;z-index:70;box-shadow:4px 0 24px rgba(0,0,0,.2);display:flex;flex-direction:column;animation:slideIn .2s ease}
+  @keyframes slideIn{from{transform:translateX(-100%)}to{transform:translateX(0)}}
+  .drawer-head{display:flex;align-items:center;gap:12px;padding:18px 16px;background:linear-gradient(150deg,var(--blue),var(--blue-deep));color:#fff;position:relative}
+  .drawer-head .logo{width:42px;height:42px;border-radius:12px;overflow:hidden;flex:none;background:#fff}
+  .drawer-head .logo img{width:100%;height:100%;object-fit:cover;display:block}
+  .drawer-head h1{font-size:18px;font-weight:700;line-height:1.2}
+  .drawer-head p{font-size:12px;opacity:.85;margin-top:1px}
+  .dw-close{position:absolute;top:12px;right:12px;width:30px;height:30px;border:none;background:rgba(255,255,255,.18);color:#fff;border-radius:8px;font-size:15px;cursor:pointer}
+  .nav-scroll{flex:1;overflow-y:auto;padding:8px 0 20px}
+  .nav-group{padding:6px 0}
+  .nav-gh{font-size:11.5px;font-weight:700;color:var(--ink-faint);letter-spacing:.02em;padding:8px 20px 4px}
+  .nav-item{display:flex;align-items:center;gap:12px;width:100%;border:none;background:none;text-align:left;padding:12px 20px;font-family:"Kanit";font-weight:600;font-size:15px;color:var(--ink);cursor:pointer}
+  .nav-item svg{width:20px;height:20px;flex:none;color:var(--ink-soft)}
+  .nav-item:active{background:var(--bg-soft)}
+  .nav-item.active{background:#eef4ff;color:var(--blue-deep);box-shadow:inset 3px 0 0 var(--blue)}
+  .nav-item.active svg{color:var(--blue)}
 
   .view{display:none}
   .view.active{display:block}
@@ -261,20 +271,39 @@
 <body>
 <header>
   <div class="wrap">
+    <button class="hb" id="menuBtn" aria-label="เมนู"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 6h18"/><path d="M3 12h18"/><path d="M3 18h18"/></svg></button>
     <span class="logo"><img src="logo.png" alt="แบ่งเบา" /></span>
-    <div><h1>แบ่งเบา</h1><p>ผู้ช่วยบัญชีร้านอาหาร</p></div>
+    <div><h1 id="curTitle">เมนู & ราคา</h1><p>แบ่งเบา · ผู้ช่วยบัญชีร้านอาหาร</p></div>
   </div>
 </header>
-<div class="tabs">
-  <div class="wrap">
-    <div class="tab active" data-main="menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11h18"/><path d="M5 11V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v4"/><path d="M5 11v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8"/></svg>เมนู</div>
-    <div class="tab" data-main="money"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>เงิน</div>
-    <div class="tab" data-main="store"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9 12 4l9 5-9 5-9-5Z"/><path d="M3 9v6l9 5 9-5V9"/><path d="M12 14v6"/></svg>สต๊อก</div>
-    <div class="tab" data-main="staff"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>ทีมงาน</div>
-    <div class="tab" data-main="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>ตั้งค่า</div>
+<div class="drawer-bg hide" id="drawerBg"></div>
+<nav class="drawer hide" id="drawer">
+  <div class="drawer-head">
+    <span class="logo"><img src="logo.png" alt="แบ่งเบา" /></span>
+    <div><h1>แบ่งเบา</h1><p>เลือกเมนูที่ต้องการ</p></div>
+    <button class="dw-close" id="drawerClose" aria-label="ปิด">✕</button>
   </div>
-</div>
-<div class="subtabs hide" id="subtabs"><div class="wrap" id="subbar"></div></div>
+  <div class="nav-scroll">
+    <div class="nav-group"><div class="nav-gh">หลัก</div>
+      <button class="nav-item active" data-view="menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11h18"/><path d="M5 11V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v4"/><path d="M5 11v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8"/></svg>เมนู &amp; ราคา</button>
+    </div>
+    <div class="nav-group"><div class="nav-gh">เงิน</div>
+      <button class="nav-item" data-view="report"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6" rx="1"/><rect x="12" y="7" width="3" height="10" rx="1"/><rect x="17" y="13" width="3" height="4" rx="1"/></svg>รายงาน</button>
+      <button class="nav-item" data-view="goals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>เป้าหมาย</button>
+      <button class="nav-item" data-view="debts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>ลูกหนี้-เจ้าหนี้</button>
+    </div>
+    <div class="nav-group"><div class="nav-gh">ของในร้าน</div>
+      <button class="nav-item" data-view="stock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9 12 4l9 5-9 5-9-5Z"/><path d="M3 9v6l9 5 9-5V9"/><path d="M12 14v6"/></svg>สต๊อกวัตถุดิบ</button>
+      <button class="nav-item" data-view="recipes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3h16v4H4z"/><path d="M6 7v14h12V7"/><path d="M9 11h6"/></svg>สูตรอาหาร</button>
+    </div>
+    <div class="nav-group"><div class="nav-gh">ทีมงาน</div>
+      <button class="nav-item" data-view="staff"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>พนักงาน</button>
+    </div>
+    <div class="nav-group"><div class="nav-gh">อื่น ๆ</div>
+      <button class="nav-item" data-view="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>ตั้งค่า</button>
+    </div>
+  </div>
+</nav>
 
 <!-- MENU VIEW -->
 <div class="view active" id="view-menu">
@@ -429,27 +458,15 @@ async function api(path, opts={}){
 
 /* ---------- tabs ---------- */
 let costLoaded=false;
-const NAV = { menu:['menu'], money:['report','goals','debts'], store:['stock','recipes'], staff:['staff'], settings:['settings'] };
-const SUBLABEL = { report:'รายงาน', goals:'เป้าหมาย', debts:'ลูกหนี้-เจ้าหนี้', stock:'วัตถุดิบ', recipes:'สูตรอาหาร' };
-const lastSub = {};
-function mainOf(view){ for(const m in NAV) if(NAV[m].includes(view)) return m; return 'menu'; }
-function switchMain(main){
-  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.main===main));
-  const subs=NAV[main]||[];
-  const bar=$('subbar');
-  if(subs.length>1){
-    $('subtabs').classList.remove('hide');
-    bar.innerHTML=subs.map(s=>`<div class="subtab" data-sub="${s}">${SUBLABEL[s]||s}</div>`).join('');
-    bar.querySelectorAll('.subtab').forEach(el=>el.addEventListener('click',()=>switchTab(el.dataset.sub)));
-  } else { $('subtabs').classList.add('hide'); bar.innerHTML=''; }
-  switchTab(lastSub[main]||subs[0]);
-}
+const VIEW_TITLE={menu:'เมนู & ราคา',report:'รายงาน',goals:'เป้าหมาย',debts:'ลูกหนี้-เจ้าหนี้',stock:'สต๊อกวัตถุดิบ',recipes:'สูตรอาหาร',staff:'พนักงาน',settings:'ตั้งค่า'};
+function openMenu(){ $('drawer').classList.remove('hide'); $('drawerBg').classList.remove('hide'); }
+function closeMenu(){ $('drawer').classList.add('hide'); $('drawerBg').classList.add('hide'); }
 function switchTab(name){
-  const main=mainOf(name); lastSub[main]=name;
-  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.main===main));
-  document.querySelectorAll('.subtab').forEach(t=>t.classList.toggle('active',t.dataset.sub===name));
+  document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.view===name));
   ['menu','report','goals','settings','stock','debts','recipes','staff'].forEach(v=>$('view-'+v).classList.toggle('active',name===v));
+  const t=$('curTitle'); if(t) t.textContent=VIEW_TITLE[name]||'';
   $('addBtn').classList.toggle('hide',name!=='menu');
+  try{ window.scrollTo(0,0); }catch(e){}
   if(name==='report'){ if(!curMonth){curMonth=thisMonth();} loadReport(); if(!costLoaded){loadCostCompare();costLoaded=true;} }
   if(name==='goals'){ loadGoals(); }
   if(name==='settings'){ loadSettings(); }
@@ -457,8 +474,12 @@ function switchTab(name){
   if(name==='debts'){ loadDebts(); }
   if(name==='recipes'){ loadRecipes(); }
   if(name==='staff'){ loadStaff(); }
+  closeMenu();
 }
-document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>switchMain(t.dataset.main)));
+$('menuBtn').addEventListener('click',openMenu);
+$('drawerBg').addEventListener('click',closeMenu);
+$('drawerClose').addEventListener('click',closeMenu);
+document.querySelectorAll('.nav-item').forEach(el=>el.addEventListener('click',()=>switchTab(el.dataset.view)));
 
 /* ---------- menu tab ---------- */
 const profitOf=(m,up=0)=>m.price-(m.material_cost*(1+up/100))-m.labor_cost;
