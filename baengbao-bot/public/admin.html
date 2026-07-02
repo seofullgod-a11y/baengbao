@@ -75,6 +75,22 @@
         <tbody id="rows"><tr><td colspan="6" class="empty">กำลังโหลด...</td></tr></tbody>
       </table>
     </div>
+
+    <div class="card" style="margin-top:16px;padding:18px">
+      <h3 style="font-family:Kanit;font-size:16px;color:var(--ink,#0a1f44);margin-bottom:4px">🖼 เปลี่ยนรูป Rich Menu</h3>
+      <p style="font-size:13px;color:#67789a;margin-bottom:12px">
+        ขนาดต้องเป็น <b>2500×1667 พิกเซล</b> · PNG หรือ JPEG · ไม่เกิน <b>1MB</b><br>
+        ตำแหน่งปุ่มเดิม: แถบบน=สรุป · ล่าง 4 ช่อง=วิธีจด / ช่วย / รายงาน / เมนู<br>
+        อัปโหลดแล้วจะสลับให้ผู้ใช้ทุกคน<b>ทันที</b> (อาจต้องปิด-เปิดแชทใหม่ถึงเห็น)
+      </p>
+      <input type="file" id="rmFile" accept="image/png,image/jpeg" style="margin-bottom:10px" />
+      <div id="rmPreviewWrap" style="display:none;margin-bottom:10px">
+        <img id="rmPreview" style="max-width:100%;border-radius:10px;border:1px solid #dce7fb" />
+        <p id="rmInfo" style="font-size:12.5px;color:#67789a;margin-top:6px"></p>
+      </div>
+      <button class="btn" id="rmUploadBtn" disabled>อัปโหลด &amp; ใช้ทันที</button>
+      <span id="rmStatus" style="font-size:13px;margin-left:10px;color:#67789a"></span>
+    </div>
   </div>
 </div>
 <div class="toast" id="toast"></div>
@@ -83,6 +99,40 @@
   const $=id=>document.getElementById(id);
   let KEY='', all=[];
   const toast=m=>{const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2200);};
+
+  /* ---- Rich Menu upload ---- */
+  let rmBlob=null, rmType='image/png';
+  document.addEventListener('DOMContentLoaded',()=>{
+    const f=$('rmFile'); if(!f) return;
+    f.addEventListener('change',()=>{
+      rmBlob=null; $('rmUploadBtn').disabled=true; $('rmStatus').textContent='';
+      const file=f.files&&f.files[0]; if(!file) { $('rmPreviewWrap').style.display='none'; return; }
+      if(!/image\/(png|jpeg)/.test(file.type)){ toast('ต้องเป็น PNG หรือ JPEG'); return; }
+      const img=new Image();
+      img.onload=()=>{
+        $('rmPreview').src=img.src;
+        $('rmPreviewWrap').style.display='block';
+        const okSize=img.naturalWidth===2500&&img.naturalHeight===1667;
+        const okBytes=file.size<=1024*1024;
+        $('rmInfo').innerHTML=`ขนาด ${img.naturalWidth}×${img.naturalHeight} · ${(file.size/1024).toFixed(0)} KB `+
+          (okSize?'<b style="color:#00a86b">✓ ขนาดถูกต้อง</b>':'<b style="color:#e5484d">✗ ต้องเป็น 2500×1667</b>')+
+          (okBytes?'':' · <b style="color:#e5484d">✗ เกิน 1MB</b>');
+        if(okSize&&okBytes){ rmBlob=file; rmType=file.type; $('rmUploadBtn').disabled=false; }
+      };
+      img.src=URL.createObjectURL(file);
+    });
+    $('rmUploadBtn').addEventListener('click',async()=>{
+      if(!rmBlob) return;
+      $('rmUploadBtn').disabled=true; $('rmStatus').textContent='กำลังอัปโหลด...';
+      try{
+        const r=await fetch('/admin/api/richmenu',{method:'POST',headers:{'Content-Type':rmType,'x-admin-key':KEY},body:rmBlob});
+        const d=await r.json().catch(()=>({}));
+        if(!r.ok) throw new Error(d.error||('error '+r.status));
+        $('rmStatus').innerHTML='<b style="color:#00a86b">✓ สำเร็จ! Rich Menu ใหม่ใช้งานแล้ว</b>';
+        toast('เปลี่ยน Rich Menu แล้ว');
+      }catch(e){ $('rmStatus').innerHTML='<b style="color:#e5484d">✗ '+esc(e.message)+'</b>'; $('rmUploadBtn').disabled=false; }
+    });
+  });
 
   async function api(path,opts){
     const r=await fetch(path,{...opts,headers:{'Content-Type':'application/json','x-admin-key':KEY,...(opts&&opts.headers)}});

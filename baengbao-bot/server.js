@@ -1085,6 +1085,50 @@ app.post('/admin/api/set-tier', express.json(), async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// เฟส 33: อัปโหลดรูป Rich Menu ใหม่ผ่านหน้า /admin (สลับให้ทุกคนทันที)
+app.post('/admin/api/richmenu',
+  express.raw({ type: ['image/png', 'image/jpeg'], limit: '2mb' }),
+  async (req, res) => {
+    if (!process.env.ADMIN_KEY) return res.status(404).json({ error: 'ตั้ง ADMIN_KEY ก่อน' });
+    if (!adminKeyOk(req)) return res.status(403).json({ error: 'คีย์ไม่ถูกต้อง' });
+    const buf = req.body;
+    if (!buf || !buf.length) return res.status(400).json({ error: 'ไม่พบไฟล์รูป (ต้องเป็น PNG หรือ JPEG)' });
+    // ตรวจขนาดภาพจาก header ของไฟล์ (LINE ต้องการ 2500x1667 ตาม areas ที่ตั้งไว้)
+    const dim = imageSize(buf);
+    if (dim && !(dim.width === 2500 && dim.height === 1667)) {
+      return res.status(400).json({ error: `ขนาดรูปต้องเป็น 2500×1667 พิกเซล (ไฟล์นี้ ${dim.width}×${dim.height})` });
+    }
+    try {
+      const ct = req.get('content-type') && req.get('content-type').includes('jpeg') ? 'image/jpeg' : 'image/png';
+      const id = await richmenu.setupRichMenuFromBuffer(process.env.CHANNEL_TOKEN, buf, ct);
+      res.json({ ok: true, richMenuId: id });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+// อ่านขนาดภาพจากไบต์ต้นไฟล์ (PNG/JPEG) แบบไม่ง้อไลบรารี
+function imageSize(buf) {
+  try {
+    // PNG: 8-byte signature แล้ว IHDR (width/height ที่ byte 16..23)
+    if (buf.length > 24 && buf[0] === 0x89 && buf[1] === 0x50) {
+      return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+    }
+    // JPEG: วนหา SOF0/SOF2 marker
+    if (buf.length > 4 && buf[0] === 0xFF && buf[1] === 0xD8) {
+      let i = 2;
+      while (i < buf.length - 9) {
+        if (buf[i] !== 0xFF) { i++; continue; }
+        const marker = buf[i + 1];
+        const len = buf.readUInt16BE(i + 2);
+        if (marker >= 0xC0 && marker <= 0xCF && marker !== 0xC4 && marker !== 0xC8 && marker !== 0xCC) {
+          return { height: buf.readUInt16BE(i + 5), width: buf.readUInt16BE(i + 7) };
+        }
+        i += 2 + len;
+      }
+    }
+  } catch (e) { /* อ่านไม่ได้ก็ข้ามการตรวจ */ }
+  return null;
+}
+
 // เฟส 10: ดาวน์โหลดรายงาน Excel (ตรวจโทเคนที่เซ็นไว้)
 app.get('/export.xlsx', async (req, res) => {
   try {

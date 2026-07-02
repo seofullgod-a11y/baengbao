@@ -687,3 +687,24 @@ push richmenu.png (binary) + richmenu.js แล้วเปิด /admin/setup-r
 - แท็บพนักงาน: ฟอร์มเพิ่ม, การ์ดค้างจ่ายรวม, การ์ดรายคน (ลงเวลา/เบิก/จ่าย/ลบ)
 - API: /api/recipes (+delete), /api/stock/cost, /api/staff (+log +remove)
 - แก้: qfmt แสดงจำนวนทศนิยม (0.1 กก, 4.7 กก) ไม่ถูกปัดเป็นจำนวนเต็ม
+
+---
+
+# ปรับ Nav Mini App — 4 เมนูหลัก + ปุ่มเพิ่มเติม (Menu Bar)
+
+- แถบบน 5 ช่อง: **เมนู · รายงาน · สต๊อก · พนักงาน · เพิ่มเติม (⋯)**
+- กด "เพิ่มเติม" เปิด Menu Bar (drawer ซ้าย) รวมระบบอื่น: เป้าหมาย, ลูกหนี้-เจ้าหนี้, สูตรอาหาร, ตั้งค่า (จัดเป็นหมวด เงิน/ของในร้าน/อื่น ๆ)
+- ไฮไลต์: อยู่หน้าเมนูหลัก → ไฮไลต์แท็บนั้น, อยู่หน้าใน drawer → ไฮไลต์ "เพิ่มเติม"
+- header กลับเป็นแบรนด์ "แบ่งเบา · ผู้ช่วยบัญชีร้านอาหาร" ตามเดิม
+- ไฟล์: public/app.html
+
+---
+
+# เฟส 33 — /admin: เปลี่ยนรูป Rich Menu ผ่านหน้าเว็บ
+
+- หน้า /admin (เดิม) เพิ่มส่วน "🖼 เปลี่ยนรูป Rich Menu": เลือกไฟล์ → พรีวิว + ตรวจขนาด → อัปโหลด & ใช้ทันที
+- เงื่อนไขรูป: **2500×1667 px** · PNG/JPEG · ≤1MB (ตาม LINE)
+- ตำแหน่งปุ่มคงเดิม (แถบบน=สรุป, ล่าง 4 ช่อง=วิธีจด/ช่วย/รายงาน/เมนู) — เปลี่ยนเฉพาะรูป
+- API: POST /admin/api/richmenu (raw image + x-admin-key) → ตรวจขนาดจาก byte header (PNG IHDR / JPEG SOF) → richmenu.setupRichMenuFromBuffer (ลบเก่า→สร้าง→อัปโหลด→ตั้ง default ให้ทุกคน)
+- richmenu.js: เพิ่ม setupRichMenuFromBuffer(token, buffer, contentType)
+- ไฟล์: server.js, richmenu.js, public/admin.html

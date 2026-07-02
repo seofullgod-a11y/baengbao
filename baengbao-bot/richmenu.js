@@ -24,8 +24,15 @@ function menuDefinition() {
 }
 
 async function setupRichMenu(token, imagePath) {
-  if (!token) throw new Error('ไม่มี channel access token');
   if (!fs.existsSync(imagePath)) throw new Error('ไม่พบไฟล์รูป ' + imagePath);
+  return setupRichMenuFromBuffer(token, fs.readFileSync(imagePath), 'image/png');
+}
+
+// เฟส 33: ตั้ง Rich Menu จาก buffer (รองรับอัปโหลดผ่านหน้า /admin)
+async function setupRichMenuFromBuffer(token, imgBuffer, contentType) {
+  if (!token) throw new Error('ไม่มี channel access token');
+  if (!imgBuffer || !imgBuffer.length) throw new Error('ไม่มีข้อมูลรูป');
+  if (imgBuffer.length > 1024 * 1024) throw new Error('รูปใหญ่เกิน 1MB (LINE จำกัด 1MB) — ลองบีบอัดก่อนครับ');
 
   // ลบ rich menu เก่าทั้งหมดก่อน (กันซ้ำเวลากดหลายครั้ง)
   const list = await fetch('https://api.line.me/v2/bot/richmenu/list', { headers: AUTH(token) }).then(r => r.json()).catch(() => ({}));
@@ -42,9 +49,8 @@ async function setupRichMenu(token, imagePath) {
   const { richMenuId } = await cr.json();
 
   // อัปโหลดรูป
-  const img = fs.readFileSync(imagePath);
   const up = await fetch('https://api-data.line.me/v2/bot/richmenu/' + richMenuId + '/content', {
-    method: 'POST', headers: { ...AUTH(token), 'Content-Type': 'image/png' }, body: img,
+    method: 'POST', headers: { ...AUTH(token), 'Content-Type': contentType || 'image/png' }, body: imgBuffer,
   });
   if (!up.ok) throw new Error('upload ' + up.status + ' ' + (await up.text()).slice(0, 200));
 
@@ -55,4 +61,4 @@ async function setupRichMenu(token, imagePath) {
   return richMenuId;
 }
 
-module.exports = { setupRichMenu };
+module.exports = { setupRichMenu, setupRichMenuFromBuffer };
