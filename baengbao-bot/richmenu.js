@@ -15,9 +15,9 @@ function menuDefinition() {
       // แบนเนอร์ด้านบน (พื้นที่ใหญ่ กดดูยอดวันนี้)
       { bounds: { x: 0, y: 0, width: 2500, height: 700 }, action: { type: 'message', text: 'สรุป' } },
       // 4 การ์ดด้านล่าง
-      { bounds: { x: 0,    y: 700, width: 625, height: 967 }, action: { type: 'message', text: 'ใช้งานอย่างไร' } },
-      { bounds: { x: 625,  y: 700, width: 625, height: 967 }, action: { type: 'message', text: 'รวมคำสั่ง' } },
-      { bounds: { x: 1250, y: 700, width: 625, height: 967 }, action: { type: 'message', text: 'สรุปกำไร-ขาดทุน' } },
+      { bounds: { x: 0,    y: 700, width: 625, height: 967 }, action: { type: 'message', text: 'วิธีจด' } },
+      { bounds: { x: 625,  y: 700, width: 625, height: 967 }, action: { type: 'message', text: 'ช่วย' } },
+      { bounds: { x: 1250, y: 700, width: 625, height: 967 }, action: { type: 'message', text: 'รายงาน' } },
       { bounds: { x: 1875, y: 700, width: 625, height: 967 }, action: { type: 'message', text: 'เมนู' } },
     ],
   };
