@@ -8,6 +8,10 @@ const xlsx = require('./export-xlsx');
 const richmenu = require('./richmenu');
 
 const app = express();
+
+// กันไม่ให้ error จาก request เดียวทำให้ทั้งเซิร์ฟเวอร์ล่ม (log ไว้แทนที่จะ crash)
+process.on('unhandledRejection', (e) => console.error('[unhandledRejection]', e && e.message ? e.message : e));
+process.on('uncaughtException', (e) => console.error('[uncaughtException]', e && e.message ? e.message : e));
 const PORT = process.env.PORT || 3000;
 const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET || '';
 const CHANNEL_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';

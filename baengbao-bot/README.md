@@ -635,3 +635,10 @@ push richmenu.png (binary) + richmenu.js แล้วเปิด /admin/setup-r
 - server API (ผ่าน liffAuth เดิม): GET/POST `/api/stock`, `/api/stock/adjust|threshold|remove`, GET/POST `/api/debts`, `/api/debts/settle` (settle บันทึกรายรับ/รายจ่ายให้อัตโนมัติเหมือนในแชท)
 - app.html: tab bar เปลี่ยนเป็นไอคอนบน-ข้อความล่าง รองรับ 6 แท็บ, เพิ่ม view-stock/view-debts + ฟังก์ชัน loadStock/loadDebts + actions
 - ไฟล์: server.js, public/app.html
+
+---
+
+# แก้ด่วน — Railway "Application failed to respond"
+- **สาเหตุ:** `pg-mem` (แพ็กเกจเทสต์) หลุดเข้าไปใน `dependencies` + `package-lock.json` ตอนรัน `npm install` ทดสอบ ทำให้ตอน Railway ติดตั้ง dependency tree มีปัญหา → build/boot ล่ม (โค้ดโปรดักชันไม่เคย require pg-mem)
+- **แก้:** เอา pg-mem ออกจาก package.json, ลบ package-lock.json ที่ปนเปื้อน (ให้ Railway `npm install` ใหม่สะอาด), เพิ่ม `process.on('unhandledRejection'/'uncaughtException')` กัน error จาก request เดียวทำให้เซิร์ฟเวอร์ล่มทั้งตัว
+- deps สุดท้าย: @anthropic-ai/sdk, exceljs, express, pg
