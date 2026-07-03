@@ -379,6 +379,39 @@ async function recordDelivery(userId, p) {
 }
 
 // ---------- event handling ----------
+// เฟส 36: คำสั่งที่สงวนให้เจ้าของร้าน (พนักงานใช้ไม่ได้)
+function ownerOnlyCommand(raw, t) {
+  const s = (raw || '').trim();
+  const exact = new Set([
+    // รายงาน/การเงิน
+    'สรุป', 'สรุปวันนี้', 'สรุปเดือน', 'รายงาน', 'กำไร', 'ขาดทุน', 'กำไรขาดทุน', 'กำไร-ขาดทุน',
+    'คงเหลือ', 'เงินคงเหลือ', 'สุขภาพร้าน', 'ฐานะ', 'ฐานะร้าน', 'เงินจริง',
+    'เป้า', 'เป้าหมาย', 'จุดคุ้มทุน', 'คุ้มทุน', 'ปิดยอด', 'ปิดร้าน', 'เงินสด', 'ปิดบัญชี',
+    'ออกรายงาน', 'excel', 'เอกเซล', 'ดาวน์โหลด', ' export',
+    // ภาษี
+    'ภาษี', 'vat', 'แวต', 'ภพ30', 'ภ.พ.30', 'ภ.พ. 30', 'เปิดภาษี', 'ปิดภาษี',
+    // หนี้
+    'ลูกหนี้', 'เจ้าหนี้', 'ค้างจ่าย', 'ดูลูกหนี้', 'ดูเจ้าหนี้', 'ใครติดเงิน', 'ใครติดบ้าง', 'ติดใครบ้าง',
+    // คน/ตั้งค่า
+    'พนักงาน', 'ลูกจ้าง', 'ทีมงาน', 'ดูพนักงาน', 'สมาชิก', 'เชิญ', 'โค้ด', 'รหัสเชิญ', 'ออกจากร้าน',
+    'ตั้งค่า', 'อัปเกรด', 'โปร', 'pro', 'สมัครโปร', 'แพ็กเกจ',
+    // สูตร (แก้ต้นทุน = ข้อมูลการเงิน)
+    'สูตร', 'สูตรอาหาร', 'ดูสูตร',
+  ].map(x => x.toLowerCase()));
+  if (exact.has(s.toLowerCase())) return true;
+
+  const prefixes = [
+    'ตั้งภาษี', 'ภาษีซื้อ', 'vatซื้อ', 'ซื้อมีใบกำกับ',
+    'ลูกหนี้ ', 'เจ้าหนี้ ', 'เชื่อ ', 'ติดเงิน', 'ติดไว้', 'ค้างเงิน', 'ค้างจ่าย ', 'ติดหนี้', 'ค้างเขา',
+    'รับเงิน', 'เก็บเงิน', 'รับคืน', 'เก็บหนี้', 'จ่ายหนี้', 'ชำระหนี้', 'จ่ายเจ้าหนี้', 'ใช้หนี้',
+    'พนักงาน ', 'ลงเวลา', 'เข้างาน', 'มาทำงาน', 'เบิก', 'จ่ายค่าแรง', 'จ่ายเงินเดือน', 'จ่ายลูกจ้าง', 'ลบพนักงาน',
+    'ตั้งเป้า', 'เป้า ', 'ชื่อร้าน', 'ที่อยู่ร้าน', 'ที่อยู่ ', 'เลขภาษี', 'เลขผู้เสียภาษี',
+    'สูตร ', 'ลบสูตร', 'ต้นทุน ', 'ราคาทุน',
+  ].map(x => x.toLowerCase());
+  const low = s.toLowerCase();
+  return prefixes.some(p => low.startsWith(p));
+}
+
 async function handleEvent(ev) {
   if (ev.type === 'follow') {
     const newUserId = ev.source && ev.source.userId;
@@ -394,6 +427,7 @@ async function handleEvent(ev) {
   const identityId = ev.source.userId;        // ตัวตนของคนที่พิมพ์ (เจ้าของหรือพนักงาน)
   await db.upsertUser(identityId);
   const userId = await db.accountOf(identityId); // บัญชีข้อมูลร้าน (แชร์กันในร้าน)
+  const isOwner = identityId === userId;         // เจ้าของ = ตัวตนตรงกับบัญชีร้าน (account_id ว่าง)
 
   // ----- text -----
   if (ev.message.type === 'text') {
@@ -404,6 +438,13 @@ async function handleEvent(ev) {
       if (['ช่วย', 'help', 'วิธีใช้', 'เริ่ม', 'start'].some(k => t.includes(k))) {
         const h = flex.helpCarousel(liffUrl());
         return replyFlex(ev.replyToken, h.altText, h.contents);
+      }
+
+      // เฟส 36: สิทธิ์ตามบทบาท — พนักงานจดรายรับ-รายจ่าย + ดู/จัดการสต๊อก + ออกใบเสร็จได้
+      // แต่ข้อมูลการเงิน/รายงาน/ตั้งค่า/จัดการคน เป็นของเจ้าของร้านเท่านั้น
+      if (!isOwner && ownerOnlyCommand(raw, t)) {
+        return replyText(ev.replyToken,
+          'ส่วนนี้เฉพาะเจ้าของร้านครับ 🔒\n\nคุณเข้าใช้ในฐานะ "พนักงาน" ทำได้:\n• จดรายรับ-รายจ่าย (พิมพ์/พูด/ถ่ายบิล)\n• ดู/เติม/ใช้ สต๊อก · ดูของต้องซื้อ\n• ออกใบเสร็จให้ลูกค้า\n\nรายงานกำไร ตั้งค่า และจัดการต่าง ๆ ให้เจ้าของร้านเป็นคนดูนะครับ');
       }
 
       if (raw === 'ข้าม' || raw.includes('ข้ามการสอน') || t === 'skip') {
@@ -1335,7 +1376,20 @@ async function liffAuth(req, res, next) {
   }
 }
 
-app.use(['/api/menus', '/api/stats', '/api/transactions', '/api/goals', '/api/cost-compare', '/api/settings', '/api/export-link', '/api/recurring', '/api/stock', '/api/debts', '/api/recipes', '/api/staff', '/api/vat'], express.json(), liffAuth);
+app.use(['/api/menus', '/api/stats', '/api/transactions', '/api/goals', '/api/cost-compare', '/api/settings', '/api/export-link', '/api/recurring', '/api/stock', '/api/debts', '/api/recipes', '/api/staff', '/api/vat', '/api/me'], express.json(), liffAuth);
+
+// เฟส 36: API ที่สงวนให้เจ้าของร้าน — พนักงาน (identityId ≠ userId) เข้าไม่ได้
+app.use(['/api/stats', '/api/goals', '/api/cost-compare', '/api/settings', '/api/export-link', '/api/debts', '/api/staff', '/api/vat', '/api/recipes'], (req, res, next) => {
+  if (req.identityId && req.userId && req.identityId !== req.userId) {
+    return res.status(403).json({ error: 'staff_forbidden', role: 'staff' });
+  }
+  next();
+});
+
+// ใครกำลังใช้งาน (เจ้าของ/พนักงาน) — ให้ mini app ปรับเมนูตามสิทธิ์
+app.get('/api/me', (req, res) => {
+  res.json({ role: req.identityId === req.userId ? 'owner' : 'staff', name: req.displayName || '' });
+});
 
 app.get('/api/menus', async (req, res) => {
   await db.upsertUser(req.identityId, req.displayName);

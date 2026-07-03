@@ -746,3 +746,25 @@ push richmenu.png (binary) + richmenu.js แล้วเปิด /admin/setup-r
 - db: users.shop_name/shop_address/tax_id (ALTER) · ตาราง receipts (receipt_no รันต่อบัญชี) · helpers getShopProfile/setShopProfile/lastIncomeTxn/createReceipt/getReceipt
 - server: signReceipt/verifyReceipt (HMAC, ลิงก์ถาวร) · route GET /receipt?t= (หน้า HTML พร้อมพิมพ์, @media print) · คำสั่งในเว็บฮุก
 - flex: receiptCard · เพิ่มในการ์ดช่วย
+
+---
+
+# เฟส 36 — สิทธิ์ตามบทบาท (เจ้าของ vs พนักงาน)
+
+เจ้าของแชร์บัญชีให้ลูกจ้างช่วยจดได้ แต่ข้อมูลการเงิน/กำไร/ตั้งค่า เป็นความลับเฉพาะเจ้าของ
+
+## บทบาท (รู้จากโครงเดิม ไม่ต้องเพิ่มคอลัมน์)
+- **เจ้าของ** = account_id ว่าง (identityId === userId)
+- **พนักงาน** = เข้าร่วมผ่าน invite code (account_id ตั้งไว้)
+
+## พนักงานทำได้
+จดรายรับ-รายจ่าย (พิมพ์/พูด/ถ่ายบิล) · ดู/เติม/ใช้ สต๊อก · ดูของต้องซื้อ · ออกใบเสร็จ · ขอความช่วยเหลือ
+
+## เฉพาะเจ้าของ
+รายงาน/กำไร/คงเหลือ/เป้า/จุดคุ้มทุน/ปิดยอด/Excel · ภาษี(VAT) · ลูกหนี้-เจ้าหนี้ · จัดการพนักงาน · สูตร+ต้นทุน · สมาชิก/เชิญ · ตั้งค่า/โปร · ชื่อร้าน/ที่อยู่/เลขภาษี
+
+## เทคนิค
+- แชท: ownerOnlyCommand(raw) — พนักงานพิมพ์คำสั่งเฉพาะเจ้าของ → ตอบสุภาพว่าเฉพาะเจ้าของ (ทดสอบ 34 เคส)
+- API: middleware กัน /api/stats,goals,cost-compare,settings,export-link,debts,staff,vat,recipes → 403 ถ้า identityId≠userId · เพิ่ม GET /api/me (role)
+- mini app: applyStaffMode() ซ่อนแท็บ/เมนูเฉพาะเจ้าของ เหลือ เมนู+สต๊อก, ป้าย "โหมดพนักงาน", guard ใน switchTab
+- ไฟล์: server.js, public/app.html (ไม่มี DB migration)

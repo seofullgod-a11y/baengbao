@@ -501,6 +501,7 @@ const MAIN_TABS=['menu','report','stock','staff'];
 function openMenu(){ $('drawer').classList.remove('hide'); $('drawerBg').classList.remove('hide'); }
 function closeMenu(){ $('drawer').classList.add('hide'); $('drawerBg').classList.add('hide'); }
 function switchTab(name){
+  if(document.body.classList.contains('staff-mode') && !['menu','stock'].includes(name)) name='stock';
   // ไฮไลต์แท็บล่าง: ถ้าเป็นเมนูหลักไฮไลต์อันนั้น ไม่งั้นไฮไลต์ "เพิ่มเติม"
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   if(MAIN_TABS.includes(name)){ const el=document.querySelector('.tab[data-view="'+name+'"]'); if(el) el.classList.add('active'); }
@@ -1069,6 +1070,17 @@ async function loadCostCompare(){
 }
 
 /* ---------- init ---------- */
+/* เฟส 36: โหมดพนักงาน — ซ่อนเมนูเฉพาะเจ้าของ เหลือ เมนู + สต๊อก */
+const STAFF_ALLOWED=['menu','stock'];
+function applyStaffMode(){
+  document.body.classList.add('staff-mode');
+  // ซ่อนแท็บหลักที่ไม่ใช่ของพนักงาน + ปุ่มเพิ่มเติม
+  document.querySelectorAll('.tab[data-view]').forEach(t=>{ if(!STAFF_ALLOWED.includes(t.dataset.view)) t.classList.add('hide'); });
+  const more=document.getElementById('moreTab'); if(more) more.classList.add('hide');
+  // ป้าย "โหมดพนักงาน" ที่ header
+  const h=document.querySelector('header .wrap>div p'); if(h) h.textContent='โหมดพนักงาน · จดขาย + ดูสต๊อก';
+  switchTab('menu');
+}
 (async()=>{
   try{
     const cfg=await fetch(API+'/api/config').then(r=>r.json());
@@ -1076,6 +1088,7 @@ async function loadCostCompare(){
     await liff.init({liffId:cfg.liffId});
     if(!liff.isLoggedIn()){liff.login();return;}
     TOKEN=liff.getAccessToken();
+    try{ const me=await api('/api/me'); if(me && me.role==='staff') applyStaffMode(); }catch(e){}
     await loadMenus();
     const params=new URLSearchParams(location.search);
     if(params.get('tab')==='report'){switchTab('report');}
