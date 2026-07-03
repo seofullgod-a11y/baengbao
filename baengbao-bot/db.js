@@ -69,6 +69,24 @@ async function init() {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vat_enabled BOOLEAN DEFAULT FALSE;`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vat_rate NUMERIC NOT NULL DEFAULT 7;`);
   await pool.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS vat SMALLINT NOT NULL DEFAULT 0;`);
+  // เฟส 35: ข้อมูลร้าน (สำหรับใบเสร็จ) + ตารางใบเสร็จ
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS shop_name TEXT;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS shop_address TEXT;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS tax_id TEXT;`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS receipts (
+      id SERIAL PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      receipt_no INT NOT NULL,
+      txn_id BIGINT,
+      total NUMERIC NOT NULL DEFAULT 0,
+      items JSONB,
+      vat_amount NUMERIC NOT NULL DEFAULT 0,
+      note TEXT,
+      rdate DATE,
+      created_at TIMESTAMPTZ DEFAULT now()
+    );
+  `);
   // เฟส 28: ลูกหนี้-เจ้าหนี้ (บิลเชื่อ / ค้างจ่ายซัพพลายเออร์)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS debts (
@@ -660,6 +678,48 @@ async function upsertUser(lineUserId, displayName) {
   );
 }
 
+// ===== เฟส 35: ใบเสร็จ / ข้อมูลร้าน =====
+async function getShopProfile(lineUserId) {
+  const { rows } = await pool.query(`SELECT shop_name, shop_address, tax_id, vat_enabled, vat_rate FROM users WHERE line_user_id=$1`, [lineUserId]);
+  const r = rows[0] || {};
+  return { shopName: r.shop_name || '', address: r.shop_address || '', taxId: r.tax_id || '', vatEnabled: !!r.vat_enabled, vatRate: +r.vat_rate || 7 };
+}
+async function setShopProfile(lineUserId, field, value) {
+  await upsertUser(lineUserId, null);
+  const col = { name: 'shop_name', address: 'shop_address', taxid: 'tax_id' }[field];
+  if (!col) return;
+  await pool.query(`UPDATE users SET ${col}=$2 WHERE line_user_id=$1`, [lineUserId, value || null]);
+}
+async function lastIncomeTxn(accountUserId) {
+  const { rows } = await pool.query(
+    `SELECT id, amount, items, txn_date::text AS d, vat FROM transactions
+      WHERE line_user_id=$1 AND type='income' ORDER BY created_at DESC LIMIT 1`,
+    [accountUserId]
+  );
+  if (!rows[0]) return null;
+  let items = null;
+  try { items = rows[0].items ? (typeof rows[0].items === 'string' ? JSON.parse(rows[0].items) : rows[0].items) : null; } catch (e) {}
+  return { id: rows[0].id, amount: +rows[0].amount, items, date: rows[0].d, vat: rows[0].vat };
+}
+async function createReceipt(accountId, { txnId, total, items, vatAmount, note, rdate }) {
+  const seq = await pool.query(`SELECT COALESCE(MAX(receipt_no),0)+1 AS n FROM receipts WHERE account_id=$1`, [accountId]);
+  const no = +seq.rows[0].n;
+  const { rows } = await pool.query(
+    `INSERT INTO receipts (account_id, receipt_no, txn_id, total, items, vat_amount, note, rdate)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+    [accountId, no, txnId || null, total, items ? JSON.stringify(items) : null, vatAmount || 0, note || null, rdate]
+  );
+  return rows[0];
+}
+async function getReceipt(accountId, receiptNo) {
+  const { rows } = await pool.query(`SELECT * FROM receipts WHERE account_id=$1 AND receipt_no=$2 LIMIT 1`, [accountId, receiptNo]);
+  if (!rows[0]) return null;
+  const r = rows[0];
+  let items = null;
+  try { items = r.items ? (typeof r.items === 'string' ? JSON.parse(r.items) : r.items) : null; } catch (e) {}
+  return { ...r, items, total: +r.total, vat_amount: +r.vat_amount };
+}
+
 async function insertTxn(t) {
   const { lineUserId, type, amount, category, note, items, source, txnDate, vat } = t;
   const { rows } = await pool.query(
@@ -928,6 +988,7 @@ module.exports = {
   bumpUsage, setDailySummary, activeUsersForDaily, usersToRemind, getState, setState,
   setGoal, getGoals, getDailySummary, categoryCompare, txnsForMonth,
   getVatConfig, setVatConfig, vatSummary,
+  getShopProfile, setShopProfile, lastIncomeTxn, createReceipt, getReceipt,
   setCashFloat, getCashFloat, cashTotalsForDay, recurringMonthlyTotal, incomeSplitForMonth,
   getMembership, setMembership, usageToday, listUsersAdmin,
   accountOf, ensureInvite, findByInvite, joinShop, leaveShop, listShopMembers, countMembers,

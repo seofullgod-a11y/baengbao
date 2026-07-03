@@ -39,6 +39,22 @@ function verifyExport(token) {
   if (!userId || !ym || Date.now() > +exp) return null;
   return { userId, ym };
 }
+// เฟส 35: ลิงก์ใบเสร็จ (ไม่หมดอายุ — เก็บไว้เปิดซ้ำได้)
+function signReceipt(accountId, receiptNo) {
+  const payload = Buffer.from(`${accountId}|${receiptNo}`).toString('base64url');
+  const sig = crypto.createHmac('sha256', CHANNEL_SECRET).update(payload).digest('base64url');
+  return `${payload}.${sig}`;
+}
+function verifyReceipt(token) {
+  const [payload, sig] = String(token || '').split('.');
+  if (!payload || !sig) return null;
+  const expected = crypto.createHmac('sha256', CHANNEL_SECRET).update(payload).digest('base64url');
+  const a = Buffer.from(sig), b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  const [accountId, receiptNo] = Buffer.from(payload, 'base64url').toString().split('|');
+  if (!accountId || !receiptNo) return null;
+  return { accountId, receiptNo: +receiptNo };
+}
 const FREE_AI_LIMIT = +process.env.FREE_AI_LIMIT || +process.env.DAILY_AI_LIMIT || 30;
 const PRO_AI_LIMIT = +process.env.PRO_AI_LIMIT || 500;
 function aiLimitFor(tier) { return tier === 'pro' ? PRO_AI_LIMIT : FREE_AI_LIMIT; }
@@ -974,6 +990,31 @@ async function handleEvent(ev) {
         }
       }
 
+      // ===== เฟส 35: ใบเสร็จ / ข้อมูลร้าน =====
+      {
+        let m = raw.match(/^ชื่อร้าน\s+(.+)$/);
+        if (m) { await db.setShopProfile(userId, 'name', m[1].trim()); return replyText(ev.replyToken, `ตั้งชื่อร้านเป็น "${m[1].trim()}" แล้วครับ ✅\nจะขึ้นบนใบเสร็จ`); }
+        m = raw.match(/^(?:ที่อยู่ร้าน|ที่อยู่)\s+(.+)$/);
+        if (m) { await db.setShopProfile(userId, 'address', m[1].trim()); return replyText(ev.replyToken, 'บันทึกที่อยู่ร้านแล้วครับ ✅'); }
+        m = raw.match(/^(?:เลขภาษี|เลขผู้เสียภาษี|taxid)\s+(.+)$/i);
+        if (m) { await db.setShopProfile(userId, 'taxid', m[1].trim().replace(/\s/g, '')); return replyText(ev.replyToken, 'บันทึกเลขประจำตัวผู้เสียภาษีแล้วครับ ✅'); }
+
+        // ออกใบเสร็จจากบิลล่าสุด
+        if (['ใบเสร็จ', 'ออกใบเสร็จ', 'ใบกำกับ', 'ใบกำกับภาษี', 'receipt'].includes(raw)) {
+          const last = await db.lastIncomeTxn(userId);
+          if (!last) return replyText(ev.replyToken, 'ยังไม่มีรายการขายให้ออกใบเสร็จครับ\nบันทึกการขายก่อน เช่น  ขายข้าว 3 จาน 150');
+          const prof = await db.getShopProfile(userId);
+          const vatAmount = prof.vatEnabled ? last.amount * prof.vatRate / (100 + prof.vatRate) : 0;
+          const rec = await db.createReceipt(userId, {
+            txnId: last.id, total: last.amount, items: last.items || null,
+            vatAmount, note: null, rdate: last.date || bkkDate(),
+          });
+          const url = `${baseUrl()}/receipt?t=${signReceipt(userId, rec.receipt_no)}`;
+          const c = flex.receiptCard(rec, prof, url);
+          return replyFlex(ev.replyToken, c.altText, c.contents);
+        }
+      }
+
       { const q = await overQuota(userId); if (q.over) return replyText(ev.replyToken, quotaMessage(q)); }
         return replyText(ev.replyToken, parsed.reply_hint ||
           'ขอโทษครับ ผมไม่ค่อยแน่ใจว่าหมายถึงอะไร 🙏\n\n' +
@@ -1173,6 +1214,74 @@ function imageSize(buf) {
     }
   } catch (e) { /* อ่านไม่ได้ก็ข้ามการตรวจ */ }
   return null;
+}
+
+// เฟส 35: หน้าใบเสร็จ (พร้อมพิมพ์) — เปิดจากลิงก์ที่เซ็นไว้
+app.get('/receipt', async (req, res) => {
+  const v = verifyReceipt(req.query.t);
+  if (!v) return res.status(403).send('ลิงก์ไม่ถูกต้องหรือหมดอายุ');
+  const rec = await db.getReceipt(v.accountId, v.receiptNo);
+  if (!rec) return res.status(404).send('ไม่พบใบเสร็จ');
+  const prof = await db.getShopProfile(v.accountId);
+  res.set('Content-Type', 'text/html; charset=utf-8').send(renderReceiptHtml(rec, prof));
+});
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function renderReceiptHtml(rec, prof) {
+  const money = n => Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const isVat = prof.vatEnabled && rec.vat_amount > 0;
+  const docTitle = isVat ? 'ใบเสร็จรับเงิน / ใบกำกับภาษีอย่างย่อ' : 'ใบเสร็จรับเงิน';
+  const items = Array.isArray(rec.items) ? rec.items : [];
+  const preVat = rec.total - (rec.vat_amount || 0);
+  const d = rec.rdate ? new Date(rec.rdate) : new Date();
+  const dateTh = d.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
+  const rows = items.length
+    ? items.map(it => `<tr><td>${esc(it.name || '-')}</td><td class="c">${esc(it.qty || 1)}</td></tr>`).join('')
+    : `<tr><td>ขายสินค้า/บริการ</td><td class="c">-</td></tr>`;
+  return `<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>ใบเสร็จ #${rec.receipt_no}</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Sarabun',sans-serif;background:#eef2f7;color:#1a2233;padding:20px;display:flex;flex-direction:column;align-items:center}
+.paper{background:#fff;width:100%;max-width:380px;padding:26px 24px;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.12)}
+.shop{text-align:center;border-bottom:1px dashed #c9d3e0;padding-bottom:14px;margin-bottom:14px}
+.shop h1{font-size:19px;font-weight:700}
+.shop p{font-size:12.5px;color:#5a6b82;margin-top:3px;line-height:1.5}
+.doctype{text-align:center;font-weight:600;font-size:13.5px;color:#0b49c9;margin-bottom:14px}
+.meta{display:flex;justify-content:space-between;font-size:12.5px;color:#5a6b82;margin-bottom:12px}
+table{width:100%;border-collapse:collapse;margin-bottom:12px}
+th,td{text-align:left;font-size:13.5px;padding:7px 0;border-bottom:1px solid #eef2f7}
+th{color:#5a6b82;font-weight:600;font-size:12px}
+td.c,th.c{text-align:center;width:60px}
+.totals{border-top:1px dashed #c9d3e0;padding-top:12px}
+.trow{display:flex;justify-content:space-between;font-size:13.5px;padding:3px 0;color:#5a6b82}
+.trow.grand{font-size:18px;font-weight:700;color:#1a2233;margin-top:6px}
+.foot{text-align:center;font-size:12px;color:#8a97a8;margin-top:18px;border-top:1px dashed #c9d3e0;padding-top:14px}
+.btns{max-width:380px;width:100%;display:flex;gap:10px;margin-top:16px}
+.btns button{flex:1;border:none;border-radius:9px;padding:12px;font-family:inherit;font-weight:600;font-size:14px;cursor:pointer}
+.print{background:#1f6bff;color:#fff}
+@media print{body{background:#fff;padding:0}.paper{box-shadow:none;max-width:100%}.btns{display:none}}
+</style></head><body>
+<div class="paper">
+  <div class="shop">
+    <h1>${esc(prof.shopName || 'ร้านของฉัน')}</h1>
+    ${prof.address ? `<p>${esc(prof.address)}</p>` : ''}
+    ${prof.taxId ? `<p>เลขประจำตัวผู้เสียภาษี ${esc(prof.taxId)}</p>` : ''}
+  </div>
+  <div class="doctype">${docTitle}</div>
+  <div class="meta"><span>เลขที่ #${String(rec.receipt_no).padStart(4, '0')}</span><span>${dateTh}</span></div>
+  <table><thead><tr><th>รายการ</th><th class="c">จำนวน</th></tr></thead><tbody>${rows}</tbody></table>
+  <div class="totals">
+    ${isVat ? `<div class="trow"><span>มูลค่าก่อนภาษี</span><span>${money(preVat)} ฿</span></div>
+    <div class="trow"><span>ภาษีมูลค่าเพิ่ม ${prof.vatRate}%</span><span>${money(rec.vat_amount)} ฿</span></div>` : ''}
+    <div class="trow grand"><span>รวมทั้งสิ้น</span><span>${money(rec.total)} ฿</span></div>
+  </div>
+  <div class="foot">ขอบคุณที่ใช้บริการ 🙏<br>ออกโดย แบ่งเบา · baengbao.app</div>
+</div>
+<div class="btns"><button class="print" onclick="window.print()">🖨 พิมพ์ / บันทึกเป็นรูป</button></div>
+</body></html>`;
 }
 
 // เฟส 10: ดาวน์โหลดรายงาน Excel (ตรวจโทเคนที่เซ็นไว้)

@@ -730,3 +730,19 @@ push richmenu.png (binary) + richmenu.js แล้วเปิด /admin/setup-r
 - db: users.vat_enabled/vat_rate, transactions.vat (ALTER ADD) · insertTxn รับ vat · helpers getVatConfig/setVatConfig/vatSummary (SUM FILTER + to_char เหมือน monthTotals)
 - flex: vatCard · mini app: แท็บ "ภาษี (VAT)" ใน More menu (toggle + สรุป + ฟอร์มภาษีซื้อ) · API /api/vat (+config +purchase)
 - เพิ่มคำสั่งในการ์ดช่วย
+
+---
+
+# เฟส 35 — ใบเสร็จ / ใบกำกับภาษีอย่างย่อ
+
+ออกใบเสร็จให้ลูกค้าได้ — การ์ดในแชท + หน้าเว็บพร้อมพิมพ์/บันทึกเป็นรูป
+
+## คำสั่ง
+- **ชื่อร้าน <ชื่อ>** · **ที่อยู่ร้าน <ที่อยู่>** · **เลขภาษี <เลข>** — ตั้งข้อมูลร้านที่ขึ้นใบเสร็จ
+- **ใบเสร็จ** — ออกใบเสร็จจากบิลขายล่าสุด → การ์ด Flex + ปุ่มเปิดหน้าใบเสร็จ (signed URL, พิมพ์ได้)
+- ถ้าเปิด VAT: หัวเอกสารเป็น "ใบกำกับภาษีอย่างย่อ" + แยกมูลค่าก่อนภาษี/VAT
+
+## เทคนิค
+- db: users.shop_name/shop_address/tax_id (ALTER) · ตาราง receipts (receipt_no รันต่อบัญชี) · helpers getShopProfile/setShopProfile/lastIncomeTxn/createReceipt/getReceipt
+- server: signReceipt/verifyReceipt (HMAC, ลิงก์ถาวร) · route GET /receipt?t= (หน้า HTML พร้อมพิมพ์, @media print) · คำสั่งในเว็บฮุก
+- flex: receiptCard · เพิ่มในการ์ดช่วย

@@ -663,6 +663,10 @@ function helpCarousel(link) {
     cmdLine('ภาษี', 'ดูสรุปภาษีเดือนนี้ (ภ.พ.30)'),
     cmdLine('ภาษีซื้อ', 'บันทึกซื้อที่มีใบกำกับ เช่น ภาษีซื้อ 5350'),
     sep('lg'),
+    secHead('ใบเสร็จ'),
+    cmdLine('ชื่อร้าน', 'ตั้งชื่อร้านขึ้นใบเสร็จ เช่น ชื่อร้าน ร้านป้าแดง'),
+    cmdLine('ใบเสร็จ', 'ออกใบเสร็จจากบิลล่าสุด (พร้อมพิมพ์)'),
+    sep('lg'),
     secHead('อื่น ๆ'),
     cmdLine('ลบล่าสุด', 'ลบรายการที่จดผิด'),
     cmdLine('ออกรายงาน', 'ไฟล์ Excel ส่งบัญชี'),
@@ -954,6 +958,34 @@ function vatCard(monthLabel, s) {
   };
 }
 
+// ===== เฟส 35: ใบเสร็จ =====
+function receiptCard(rec, prof, url) {
+  const isVat = prof.vatEnabled && Number(rec.vat_amount) > 0;
+  const items = Array.isArray(rec.items) ? rec.items : [];
+  const itemLines = items.length
+    ? items.slice(0, 6).map(it => statRow(it.name || '-', `${it.qty || 1}`, C.ink))
+    : [sol('ขายสินค้า/บริการ', C.ink, { size: 'sm' })];
+  const body = [
+    sol(`เลขที่ #${String(rec.receipt_no).padStart(4, '0')}`, C.soft, { size: 'xs' }),
+    ...itemLines,
+    sep('md'),
+  ];
+  if (isVat) {
+    const preVat = Number(rec.total) - Number(rec.vat_amount);
+    body.push(statRow('ก่อนภาษี', `${baht(Math.round(preVat * 100) / 100)} ฿`, C.soft));
+    body.push(statRow(`VAT ${prof.vatRate}%`, `${baht(Math.round(Number(rec.vat_amount) * 100) / 100)} ฿`, C.soft));
+  }
+  body.push(statRow('รวมทั้งสิ้น', `${baht(rec.total)} ฿`, C.blueDeep, true));
+  return {
+    altText: `ใบเสร็จ #${rec.receipt_no} ${baht(rec.total)} ฿`,
+    contents: bubble({
+      headerBox: header(prof.shopName || 'ใบเสร็จรับเงิน', isVat ? 'ใบกำกับภาษีอย่างย่อ' : 'ใบเสร็จรับเงิน', C.blueDeep),
+      bodyContents: body,
+      footerButton: linkButton('เปิดใบเสร็จ (พร้อมพิมพ์)', url),
+    }),
+  };
+}
+
 module.exports = {
   confirmCard, summaryCard, deliveryCard, menuProfitCard, menuLinkCard, dailyPushCard,
   goalCard, goalReachedCard, costCompareCard, exportCard, weeklyCard, welcomeCarousel,
@@ -963,4 +995,5 @@ module.exports = {
   recipeCard, recipeListCard,
   staffAddedCard, staffListCard, staffDetailCard, staffPayCard,
   vatCard,
+  receiptCard,
 };
