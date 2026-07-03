@@ -282,6 +282,21 @@
   .vrow b{font-family:"Kanit";font-size:15px;color:var(--ink)}
   .vrow.big{font-size:15px}.vrow.big b{font-size:19px}
   .vsep{height:1px;background:var(--border);margin:8px 0}
+  /* ===== ปุ่มซูมตอน hover/กด (ทุกปุ่ม) ===== */
+  button,.tab,.fab,.nav-item,.subtab{transition:transform .15s cubic-bezier(.34,1.56,.64,1),background .15s,color .15s,border-color .15s,box-shadow .15s}
+  @media(hover:hover){
+    button:hover{transform:scale(1.05)}
+    .fab:hover{transform:translateX(-50%) scale(1.05)}
+    .tab:hover{transform:scale(1.06)}
+    .nav-item:hover{transform:scale(1.02)}
+  }
+  button:active,.tab:active{transform:scale(.93)}
+  .fab:active{transform:translateX(-50%) scale(.93)}
+  .nav-item:active{transform:scale(.97)}
+  @media(prefers-reduced-motion:reduce){
+    button,.tab,.fab,.nav-item,.subtab{transition:none}
+    button:hover,.tab:hover,.fab:hover,.nav-item:hover{transform:none}
+  }
 </style>
 </head>
 <body>
