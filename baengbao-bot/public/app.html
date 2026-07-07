@@ -324,6 +324,11 @@
   .td-empty p{font-size:15px;font-weight:600;font-family:"Kanit"}
   .td-empty .hint{font-size:13px;font-weight:400;color:var(--ink-soft);margin-top:6px;line-height:1.7}
   .td-empty button{margin-top:12px;border:none;background:var(--blue);color:#fff;border-radius:10px;padding:10px 20px;font-family:"Kanit";font-weight:600;font-size:14px;cursor:pointer}
+  .td-flow{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:14px}
+  .td-flow .tf{display:flex;flex-direction:column;align-items:center;background:var(--bg-soft);border-radius:12px;padding:8px 12px;min-width:64px}
+  .td-flow .tf b{font-family:"Kanit";font-size:15px;color:var(--blue)}
+  .td-flow .tf small{font-size:10.5px;color:var(--ink-faint);margin-top:1px}
+  .td-flow .tf-arrow{color:var(--ink-faint);font-weight:700}
   .td-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px;margin-top:14px}
   .td-card-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
   .td-card-h h2{font-size:15.5px;font-weight:600;font-family:"Kanit"}
@@ -528,7 +533,14 @@
 
     <div class="td-empty hide" id="tdEmpty">
       <p>วันนี้ยังไม่ได้จดเลยครับ ✍️</p>
-      <p class="hint">พิมพ์ในแชทไลน์ได้เลย เช่น <b>"ขายกะเพรา 3 จาน 150"</b><br>แล้วกลับมาดูยอดที่นี่</p>
+      <p class="hint">พิมพ์ พูด หรือถ่ายรูปบิลในแชทไลน์ได้เลย<br>เช่น <b>"ขายกะเพรา 3 จาน 150"</b> หรือแตะแท็บ <b>ขาย</b> ด้านล่าง</p>
+      <div class="td-flow">
+        <span class="tf"><b>จด</b><small>ง่ายแค่บอก</small></span>
+        <span class="tf-arrow">→</span>
+        <span class="tf"><b>รู้</b><small>กำไรจริง</small></span>
+        <span class="tf-arrow">→</span>
+        <span class="tf"><b>ทำ</b><small>ตามที่แนะนำ</small></span>
+      </div>
       <button id="tdGoChat">กลับไปที่แชท</button>
     </div>
 
