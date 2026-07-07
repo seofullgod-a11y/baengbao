@@ -178,6 +178,20 @@ async function init() {
       created_at   TIMESTAMPTZ DEFAULT now()
     );
   `);
+  // เฟส 42: สมุดหนี้รายคน — เก็บประวัติเพิ่มหนี้/รับชำระ
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS debt_logs (
+      id SERIAL PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      direction TEXT NOT NULL,
+      party TEXT NOT NULL,
+      kind TEXT NOT NULL,               -- 'add' (เพิ่มหนี้) | 'pay' (ชำระ/รับคืน)
+      amount NUMERIC NOT NULL,
+      note TEXT,
+      log_date DATE,
+      created_at TIMESTAMPTZ DEFAULT now()
+    );
+  `);
   // เฟส 38: หมอร้าน — เก็บผลวิเคราะห์ AI ล่าสุดต่อบัญชีร้าน
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ai_insights (
@@ -288,12 +302,14 @@ async function upsertDebt(accountId, direction, party, addAmount, note, date) {
     const r = rows[0];
     const newAmount = Number(r.amount) + Number(addAmount);
     await pool.query(`UPDATE debts SET amount=$2, note=COALESCE($3,note) WHERE id=$1`, [r.id, newAmount, note || null]);
+    await logDebt(accountId, direction, r.party, 'add', addAmount, note, date);
     return { isNew: false, party, remaining: newAmount - Number(r.paid) };
   }
   await pool.query(
     `INSERT INTO debts (account_id, direction, party, amount, paid, note, status, created_date) VALUES ($1,$2,$3,$4,0,$5,'open',$6)`,
     [accountId, direction, party, Number(addAmount), note || null, date]
   );
+  await logDebt(accountId, direction, party, 'add', addAmount, note, date);
   return { isNew: true, party, remaining: Number(addAmount) };
 }
 
@@ -338,6 +354,7 @@ async function settleDebt(accountId, direction, party, payAmount) {
       [r.id, newPaid, settled ? 'settled' : 'open', settled ? (r.created_date || null) : null]);
     applied += pay; toPay -= pay;
   }
+  if (applied > 0.0001) await logDebt(accountId, direction, fullName, 'pay', applied, null, null);
   // ยอดคงเหลือของชื่อนี้หลังชำระ
   const after = await pool.query(
     `SELECT amount, paid FROM debts WHERE account_id=$1 AND direction=$2 AND status='open' AND lower(party) LIKE lower($3)`,
@@ -1026,9 +1043,54 @@ async function saveInsight(accountId, dateStr, content) {
   );
 }
 
+// เฟส 42: ประวัติหนี้รายคน
+async function logDebt(accountId, direction, party, kind, amount, note, date) {
+  try {
+    await pool.query(
+      `INSERT INTO debt_logs (account_id, direction, party, kind, amount, note, log_date) VALUES ($1,$2,$3,$4,$5,$6,COALESCE($7::date, (now() AT TIME ZONE 'Asia/Bangkok')::date))`,
+      [accountId, direction, (party || '').trim(), kind, Number(amount), note || null, date || null]
+    );
+  } catch (e) { console.error('[debt_log]', e.message); }
+}
+async function debtHistory(accountId, direction, party, limit = 30) {
+  const { rows } = await pool.query(
+    `SELECT kind, amount, note, log_date::text AS d FROM debt_logs
+     WHERE account_id=$1 AND direction=$2 AND lower(party)=lower($3)
+     ORDER BY id DESC LIMIT $4`,
+    [accountId, direction, (party || '').trim(), limit]
+  );
+  return rows.map(r => ({ kind: r.kind, amount: +r.amount, note: r.note, date: r.d }));
+}
+
+// เฟส 43: ฐานพยากรณ์ — รายรับ + รายจ่ายผันแปร (ไม่รวมรายจ่ายประจำที่ระบบลงให้) + จำนวนวันที่มีการจด
+async function forecastBase(lineUserId, start, end) {
+  const { rows } = await pool.query(
+    `SELECT
+       COALESCE(SUM(amount) FILTER (WHERE type='income'),0) AS income,
+       COALESCE(SUM(amount) FILTER (WHERE type='expense' AND COALESCE(source,'')<>'recurring'),0) AS var_expense,
+       COUNT(DISTINCT txn_date) AS active_days
+     FROM transactions WHERE line_user_id=$1 AND txn_date BETWEEN $2 AND $3`,
+    [lineUserId, start, end]
+  );
+  const r = rows[0];
+  return { income: +r.income, varExpense: +r.var_expense, activeDays: +r.active_days };
+}
+// รายจ่ายประจำที่ "กำลังจะถึง" ในเดือนนี้ (ยังไม่ถูกลงบัญชีรอบเดือนนี้)
+async function recurringDue(lineUserId, afterDay, ym) {
+  const { rows } = await pool.query(
+    `SELECT name, amount, day_of_month FROM recurring_expenses
+     WHERE line_user_id=$1 AND active=TRUE AND day_of_month > $2
+       AND (last_run_ym IS NULL OR last_run_ym <> $3)
+     ORDER BY day_of_month ASC`,
+    [lineUserId, afterDay, ym]
+  );
+  return rows.map(r => ({ name: r.name, amount: +r.amount, day: r.day_of_month }));
+}
+
 module.exports = {
   pool, init, upsertUser, insertTxn, dayTotals, monthTotals, rangeTotals,
   txnsBetween, getInsight, saveInsight,
+  logDebt, debtHistory, forecastBase, recurringDue,
   listMenus, createMenu, updateMenu, deleteMenu,
   dailySeries, categoryBreakdown, recentTxns, deleteTxn, updateTxn, currentStreak,
   bumpUsage, setDailySummary, activeUsersForDaily, usersToRemind, getState, setState,

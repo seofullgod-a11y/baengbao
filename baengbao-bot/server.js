@@ -1105,6 +1105,9 @@ async function handleEvent(ev) {
     try {
       if (!process.env.OPENAI_API_KEY)
         return replyText(ev.replyToken, 'ตอนนี้ยังฟังเสียงไม่ได้ครับ 🙏 พิมพ์มาได้เลย เช่น  ขายข้าว 50');
+      // เฟส 42: กันเสียงยาวเกิน 2 นาที (เปลืองและมักฟังไม่ชัด)
+      if (ev.message.duration && ev.message.duration > 120000)
+        return replyText(ev.replyToken, 'เสียงยาวเกิน 2 นาทีครับ 🙏 ลองพูดสั้น ๆ ทีละรายการ เช่น  ขายกะเพรา 3 จาน 150');
       { const q = await overQuota(userId); if (q.over) return replyText(ev.replyToken, quotaMessage(q)); }
       const { buf, mediaType } = await getMessageContent(ev.message.id);
       const tr = await ai.transcribeThai(buf, mediaType);
@@ -1376,10 +1379,10 @@ async function liffAuth(req, res, next) {
   }
 }
 
-app.use(['/api/menus', '/api/stats', '/api/transactions', '/api/goals', '/api/cost-compare', '/api/settings', '/api/export-link', '/api/recurring', '/api/stock', '/api/debts', '/api/recipes', '/api/staff', '/api/vat', '/api/me', '/api/today', '/api/menu-rank', '/api/doctor'], express.json(), liffAuth);
+app.use(['/api/menus', '/api/stats', '/api/transactions', '/api/goals', '/api/cost-compare', '/api/settings', '/api/export-link', '/api/recurring', '/api/stock', '/api/debts', '/api/recipes', '/api/staff', '/api/vat', '/api/me', '/api/today', '/api/menu-rank', '/api/doctor', '/api/forecast', '/api/shopping-list'], express.json(), liffAuth);
 
 // เฟส 36: API ที่สงวนให้เจ้าของร้าน — พนักงาน (identityId ≠ userId) เข้าไม่ได้
-app.use(['/api/stats', '/api/goals', '/api/cost-compare', '/api/settings', '/api/export-link', '/api/debts', '/api/staff', '/api/vat', '/api/recipes', '/api/today', '/api/menu-rank', '/api/doctor'], (req, res, next) => {
+app.use(['/api/stats', '/api/goals', '/api/cost-compare', '/api/settings', '/api/export-link', '/api/debts', '/api/staff', '/api/vat', '/api/recipes', '/api/today', '/api/menu-rank', '/api/doctor', '/api/forecast', '/api/shopping-list'], (req, res, next) => {
   if (req.identityId && req.userId && req.identityId !== req.userId) {
     return res.status(403).json({ error: 'staff_forbidden', role: 'staff' });
   }
@@ -1484,6 +1487,126 @@ app.get('/api/menu-rank', async (req, res) => {
     return a.hasCost ? b.totalProfit - a.totalProfit : b.revenue - a.revenue;
   });
   res.json({ days, start, end: today, items });
+});
+
+// ===== เฟส 43: พยากรณ์เงินสดสิ้นเดือน + รายการต้องซื้อพรุ่งนี้ =====
+function daysInMonth(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+app.get('/api/forecast', async (req, res) => {
+  const today = bkkDate();
+  const ym = today.slice(0, 7);
+  const day = +today.slice(8, 10);
+  const dim = daysInMonth(ym);
+  const daysLeft = dim - day;
+  const [base, month, due, debts] = await Promise.all([
+    db.forecastBase(req.userId, minusDays(today, 27), today),
+    db.monthTotals(req.userId, ym),
+    db.recurringDue(req.userId, day, ym),
+    db.debtTotals(req.userId),
+  ]);
+  if (base.activeDays < 3) {
+    return res.json({ ready: false, activeDays: base.activeDays,
+      message: 'จดต่อเนื่องสัก 3 วันขึ้นไป แล้วผมจะพยากรณ์สิ้นเดือนให้ได้ครับ' });
+  }
+  const avgIncome = base.income / 28;
+  const avgVarExpense = base.varExpense / 28;
+  const dueSum = due.reduce((s, d) => s + d.amount, 0);
+  const projIncome = month.income + avgIncome * daysLeft;
+  const projExpense = month.expense + avgVarExpense * daysLeft + dueSum;
+  const projProfit = projIncome - projExpense;
+  const warnings = [];
+  for (const d of due) warnings.push({ type: 'recurring', text: `${d.name} ${Math.round(d.amount).toLocaleString()} ฿ (วันที่ ${d.day})` });
+  if (debts.payable > 0) warnings.push({ type: 'payable', text: `หนี้ค้างจ่ายร้านอื่น ${Math.round(debts.payable).toLocaleString()} ฿ (${debts.payableCount} ราย)` });
+  res.json({
+    ready: true, ym, daysLeft, activeDays: base.activeDays,
+    monthSoFar: month,
+    avgDailyIncome: Math.round(avgIncome), avgDailyVarExpense: Math.round(avgVarExpense),
+    upcomingRecurring: due, upcomingRecurringSum: Math.round(dueSum),
+    projected: { income: Math.round(projIncome), expense: Math.round(projExpense), profit: Math.round(projProfit) },
+    receivable: Math.round(debts.receivable), warnings,
+    lowConfidence: base.activeDays < 7,
+  });
+});
+
+app.get('/api/shopping-list', async (req, res) => {
+  const today = bkkDate();
+  const tomorrow = minusDays(today, -1);
+  const w = new Date(tomorrow + 'T00:00:00Z').getUTCDay();
+  const [txns, recipes, stock] = await Promise.all([
+    db.txnsBetween(req.userId, minusDays(today, 27), today),
+    db.listRecipes(req.userId).catch(() => []),
+    db.listStock(req.userId).catch(() => []),
+  ]);
+  // จำนวนขายต่อเมนู: เฉลี่ยตามวันในสัปดาห์เดียวกับพรุ่งนี้ หารด้วยจำนวนครั้งจริงของวันนั้น "ในช่วงที่มีข้อมูล"
+  // (ร้านเพิ่งจดไม่กี่วันจะได้ค่าที่สมจริง ไม่โดนหาร 4 สัปดาห์คงที่จนต่ำเกิน)
+  const byItemW = new Map(), byItemAll = new Map();
+  let firstDate = null;
+  for (const t of txns) {
+    if (t.type !== 'income' || !Array.isArray(t.items)) continue;
+    if (!firstDate || t.date < firstDate) firstDate = t.date;
+    const dw = new Date(t.date + 'T00:00:00Z').getUTCDay();
+    for (const it of t.items) {
+      const name = String(it && it.name || '').trim(); if (!name) continue;
+      const key = name.toLowerCase(), qty = Number(it.qty) || 1;
+      byItemAll.set(key, (byItemAll.get(key) || 0) + qty);
+      if (dw === w) byItemW.set(key, (byItemW.get(key) || 0) + qty);
+    }
+  }
+  // นับจำนวนวันในช่วงข้อมูล และจำนวนครั้งของ weekday เดียวกับพรุ่งนี้
+  let spanDays = 0, weekdayOcc = 0;
+  if (firstDate) {
+    for (let d = firstDate; d <= today; d = minusDays(d, -1)) {
+      spanDays++;
+      if (new Date(d + 'T00:00:00Z').getUTCDay() === w) weekdayOcc++;
+      if (spanDays > 40) break; // กันลูปเกิน
+    }
+  }
+  const expectedQty = key => {
+    const wk = byItemW.get(key);
+    if (wk && weekdayOcc > 0) return wk / weekdayOcc;
+    return spanDays > 0 ? (byItemAll.get(key) || 0) / spanDays : 0;
+  };
+  const BUFFER = 1.15; // เผื่อ 15%
+  const reqByIng = new Map();
+  for (const r of (recipes || [])) {
+    const mkey = String(r.menuName || '').trim().toLowerCase();
+    let exp = expectedQty(mkey);
+    if (!exp) { for (const [k] of byItemAll) { if (k.includes(mkey) || mkey.includes(k)) { exp = expectedQty(k); break; } } }
+    if (!exp || !r.items) continue;
+    for (const ing of r.items) {
+      const ikey = String(ing.ingredient || '').trim().toLowerCase(); if (!ikey) continue;
+      const cur = reqByIng.get(ikey) || { name: ing.ingredient, need: 0, unit: ing.unit || '', menus: new Set() };
+      cur.need += (Number(ing.qty) || 0) * exp;
+      cur.menus.add(r.menuName);
+      reqByIng.set(ikey, cur);
+    }
+  }
+  const stockByName = new Map(stock.map(s => [s.name.trim().toLowerCase(), s]));
+  const items = [];
+  for (const [ikey, r] of reqByIng) {
+    const s = stockByName.get(ikey);
+    const have = s ? Number(s.qty) : 0;
+    const need = r.need * BUFFER;
+    const buy = Math.max(0, need - have);
+    if (buy <= 0.0001) continue;
+    const buyR = Math.ceil(buy * 10) / 10;
+    const unitCost = s && s.unit_cost != null ? Number(s.unit_cost) : null;
+    items.push({
+      name: s ? s.name : r.name, unit: (s && s.unit) || r.unit || '',
+      need: Math.round(need * 10) / 10, have: Math.round(have * 10) / 10, buy: buyR,
+      estCost: unitCost != null ? Math.round(buyR * unitCost) : null,
+      forMenus: [...r.menus].slice(0, 3),
+    });
+  }
+  // ของใกล้หมดที่ไม่โดนสูตรครอบ → เตือนแยก
+  const covered = new Set(items.map(i => i.name.trim().toLowerCase()));
+  const lowExtra = stock.filter(s => s.low && !covered.has(s.name.trim().toLowerCase()) && !reqByIng.has(s.name.trim().toLowerCase()))
+    .map(s => ({ name: s.name, qty: Number(s.qty), unit: s.unit || '' }));
+  items.sort((a, b) => (b.estCost || 0) - (a.estCost || 0) || b.buy - a.buy);
+  const totalEst = items.reduce((s, i) => s + (i.estCost || 0), 0);
+  res.json({ tomorrow, weekday: w, items, lowExtra, totalEst, hasRecipes: (recipes || []).length > 0 });
 });
 
 // ===== เฟส 38: หมอร้าน (AI วิเคราะห์สุขภาพร้าน) =====
@@ -1651,7 +1774,15 @@ app.get('/api/debts', async (req, res) => {
     db.debtTotals(req.userId),
     db.monthTotals(req.userId, ym),
   ]);
-  res.json({ receivable, payable, totals, month });
+  const shop = await db.getShopProfile(req.userId).catch(() => null);
+  res.json({ receivable, payable, totals, month, shopName: (shop && shop.shopName) || '' });
+});
+// เฟส 42: ประวัติหนี้รายคน
+app.get('/api/debts/history', async (req, res) => {
+  const dir = req.query.direction === 'payable' ? 'payable' : 'receivable';
+  const party = String(req.query.party || '').trim();
+  if (!party) return res.status(400).json({ error: 'ต้องระบุชื่อ' });
+  res.json({ party, direction: dir, logs: await db.debtHistory(req.userId, dir, party) });
 });
 app.post('/api/debts', async (req, res) => {
   const { direction, party, amount } = req.body || {};

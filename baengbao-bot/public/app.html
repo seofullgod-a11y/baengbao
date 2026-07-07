@@ -155,6 +155,18 @@
   .sheet .cancel{width:100%;background:none;border:none;color:var(--ink-faint);padding:13px;font-size:14px;margin-top:4px;cursor:pointer}
 
   .loading{text-align:center;padding:50px 20px;color:var(--ink-faint)}
+  /* เฟส 41: skeleton shimmer + view transition */
+  @keyframes shimmer{0%{background-position:-320px 0}100%{background-position:320px 0}}
+  .sk{border-radius:12px;background:linear-gradient(90deg,var(--border) 25%,#eef3fc 50%,var(--border) 75%);background-size:640px 100%;animation:shimmer 1.25s linear infinite}
+  :root[data-theme="dark"] .sk{background:linear-gradient(90deg,#22344f 25%,#2c405e 50%,#22344f 75%);background-size:640px 100%}
+  .sk-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px;margin-top:14px}
+  .sk-row{display:flex;align-items:center;gap:12px;padding:10px 0}
+  .sk-line{height:13px}
+  .sk-wrap{padding:4px 0}
+  @keyframes viewIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+  @media(prefers-reduced-motion:no-preference){
+    .view.active{animation:viewIn .28s cubic-bezier(.22,1,.36,1)}
+  }
   .spin{width:30px;height:30px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;margin:0 auto 14px;animation:sp 1s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
   .toast{position:fixed;bottom:calc(160px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:11px 18px;border-radius:100px;font-size:14px;z-index:60;opacity:0;transition:.25s;pointer-events:none}
@@ -346,6 +358,42 @@
   .share-box img{width:100%;border-radius:12px;border:1px solid var(--border)}
   .share-box p{font-size:13px;color:var(--ink-soft);margin:10px 0}
   .share-box button{border:none;background:var(--bg-soft);border-radius:10px;padding:9px 22px;font-family:"Kanit";font-weight:600;font-size:14px;cursor:pointer;color:var(--ink)}
+  /* ---- เฟส 42-43: สมุดหนี้รายคน / พยากรณ์ / รายการซื้อ ---- */
+  .sh-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  .sh-head h3{font-family:"Kanit";font-size:17px}
+  .sh-x{border:none;background:var(--bg-soft);width:32px;height:32px;border-radius:10px;font-size:14px;cursor:pointer;color:var(--ink-soft)}
+  .ds-amt{display:flex;justify-content:space-between;align-items:baseline;background:var(--bg-soft);border-radius:12px;padding:12px 14px;margin:8px 0 12px}
+  .ds-amt span{font-size:13px;color:var(--ink-soft)}
+  .ds-amt b{font-family:"Kanit";font-size:22px;font-weight:700}
+  .ds-actions{display:flex;gap:8px;margin-bottom:14px}
+  .ds-btn{flex:1;border:none;border-radius:12px;padding:11px;font-family:"Kanit";font-weight:600;font-size:14px;cursor:pointer}
+  .ds-btn.pay{background:var(--blue);color:#fff}
+  .ds-btn.dun{background:#e6f9ef;color:#0f9d63}
+  :root[data-theme="dark"] .ds-btn.dun{background:rgba(15,157,99,.18)}
+  .ds-h{font-family:"Kanit";font-size:13.5px;color:var(--ink-soft);margin:4px 0 6px}
+  .ds-log{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13.5px}
+  .ds-log:last-child{border-bottom:none}
+  .ds-log .k{color:var(--ink-soft);font-size:12px}
+  .ds-log .a.add{color:#e05a4e}.ds-log .a.pay{color:#0f9d63}
+  .drow2{cursor:pointer}
+  .fc-big{display:flex;align-items:baseline;gap:8px;margin:2px 0 6px}
+  .fc-big b{font-family:"Kanit";font-weight:700;font-size:26px}
+  .fc-big b.pos{color:#0f9d63}.fc-big b.neg{color:#e05a4e}
+  .fc-line{display:flex;justify-content:space-between;font-size:13px;color:var(--ink-soft);padding:4px 0}
+  .fc-line b{font-family:"IBM Plex Mono",monospace;color:var(--ink)}
+  .fc-warn{background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:10px 12px;margin-top:10px;font-size:12.5px;line-height:1.8}
+  :root[data-theme="dark"] .fc-warn{background:rgba(240,136,62,.12);border-color:rgba(240,136,62,.3)}
+  .fc-note{font-size:11.5px;color:var(--ink-faint);margin-top:8px}
+  .shop-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer}
+  .shop-row:last-child{border-bottom:none}
+  .shop-row .cb{width:22px;height:22px;border-radius:7px;border:2px solid var(--border);flex:none;display:grid;place-items:center;color:#fff;font-size:13px}
+  .shop-row.done .cb{background:#0f9d63;border-color:#0f9d63}
+  .shop-row.done .si{opacity:.45;text-decoration:line-through}
+  .shop-row .si{flex:1;min-width:0}
+  .shop-row .si .n{font-weight:600;font-size:14px}
+  .shop-row .si .s{font-size:12px;color:var(--ink-soft)}
+  .shop-row .sc{font-family:"IBM Plex Mono",monospace;font-size:13.5px;font-weight:600}
+  .shop-total{display:flex;justify-content:space-between;padding-top:10px;font-family:"Kanit";font-weight:600;font-size:14px}
   button,.tab,.fab,.nav-item,.subtab{transition:transform .15s cubic-bezier(.34,1.56,.64,1),background .15s,color .15s,border-color .15s,box-shadow .15s}
   @media(hover:hover){
     button:hover{transform:scale(1.05)}
@@ -438,16 +486,34 @@
 
     <div class="td-card">
       <div class="td-card-h"><h2>เมนูเลี้ยงร้าน · เมนูกินร้าน</h2><span class="cap" id="rankCap">30 วันล่าสุด</span></div>
-      <div id="rankList"><div class="td-loading">กำลังโหลด…</div></div>
+      <div id="rankList"></div>
+    </div>
+
+    <div class="td-card" id="fcCard">
+      <div class="td-card-h"><h2>🔮 คาดการณ์สิ้นเดือน</h2><span class="cap" id="fcCap"></span></div>
+      <div id="fcBody"><div class="td-loading">กำลังโหลด…</div></div>
     </div>
 
     <div class="td-card doctor">
       <div class="td-card-h"><h2>🩺 หมอร้าน</h2><span class="cap" id="docTier"></span></div>
-      <div class="doc-body" id="docBody"><div class="td-loading">กำลังโหลด…</div></div>
+      <div class="doc-body" id="docBody"></div>
       <button class="doc-btn" id="docBtn" disabled>ตรวจสุขภาพร้าน</button>
       <div class="doc-note" id="docNote"></div>
     </div>
   </div>
+</div>
+
+<!-- เฟส 42: สมุดหนี้รายคน -->
+<div class="sheet-bg" id="debtSheetBg"></div>
+<div class="sheet" id="debtSheet">
+  <div class="sh-head"><h3 id="dsName">—</h3><button class="sh-x" onclick="closeDebtSheet()">✕</button></div>
+  <div class="ds-amt"><span>ยอดค้างตอนนี้</span><b class="mono" id="dsRemain">0 ฿</b></div>
+  <div class="ds-actions">
+    <button class="ds-btn pay" id="dsPayBtn">รับชำระ</button>
+    <button class="ds-btn dun hide" id="dsDunBtn">📋 คัดลอกข้อความทวง</button>
+  </div>
+  <h4 class="ds-h">ประวัติ</h4>
+  <div id="dsLogs"><div class="td-loading">กำลังโหลด…</div></div>
 </div>
 
 <!-- share fallback modal (เฟส 39) -->
@@ -470,7 +536,7 @@
       <input type="range" id="up" min="0" max="80" value="0" step="5">
     </div>
     <div class="section-title"><h2>เมนูของร้าน</h2><span class="count" id="count"></span></div>
-    <div id="list"><div class="loading"><div class="spin"></div>กำลังโหลด...</div></div>
+    <div id="list"></div>
   </div>
 </div>
 
@@ -482,7 +548,7 @@
       <span class="lbl" id="mLabel">—</span>
       <button id="nextM"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
     </div>
-    <div id="report"><div class="loading"><div class="spin"></div>กำลังโหลด...</div></div>
+    <div id="report"></div>
     <div id="costPanel"></div>
   </div>
 </div>
@@ -490,14 +556,14 @@
 <!-- GOALS VIEW -->
 <div class="view" id="view-goals">
   <div class="wrap">
-    <div id="goalsBox"><div class="loading"><div class="spin"></div>กำลังโหลด...</div></div>
+    <div id="goalsBox"></div>
   </div>
 </div>
 
 <!-- SETTINGS VIEW -->
 <div class="view" id="view-settings">
   <div class="wrap">
-    <div id="settingsBox"><div class="loading"><div class="spin"></div>กำลังโหลด...</div></div>
+    <div id="settingsBox"></div>
   </div>
 </div>
 
@@ -510,7 +576,11 @@
       <input id="stUnit" placeholder="หน่วย" />
       <button id="stAddBtn">เพิ่ม</button>
     </div>
-    <div id="stockBox"><div class="loading"><div class="spin"></div>กำลังโหลด...</div></div>
+    <div class="td-card shoplist hide" id="shopCard" style="margin-top:14px">
+      <div class="td-card-h"><h2>🛒 ต้องซื้อพรุ่งนี้</h2><span class="cap" id="shopCap"></span></div>
+      <div id="shopBody"></div>
+    </div>
+    <div id="stockBox"></div>
   </div>
 </div>
 
@@ -525,7 +595,7 @@
         <button id="dbAddBtn">เพิ่ม</button>
       </div>
     </div>
-    <div id="debtsBox"><div class="loading"><div class="spin"></div>กำลังโหลด...</div></div>
+    <div id="debtsBox"></div>
   </div>
 </div>
 
@@ -538,7 +608,7 @@
       <button class="rc-addrow" id="rcAddRow">+ เพิ่มวัตถุดิบ</button>
       <button class="rc-save" id="rcSaveBtn">บันทึกสูตร</button>
     </div>
-    <div id="recipesBox"><div class="loading"><div class="spin"></div>กำลังโหลด...</div></div>
+    <div id="recipesBox"></div>
   </div>
 </div>
 
@@ -550,14 +620,14 @@
       <input id="sfWage" type="number" inputmode="decimal" placeholder="ค่าแรง/วัน" />
       <button id="sfAddBtn">เพิ่ม</button>
     </div>
-    <div id="staffBox"><div class="loading"><div class="spin"></div>กำลังโหลด...</div></div>
+    <div id="staffBox"></div>
   </div>
 </div>
 
 <!-- VAT VIEW -->
 <div class="view" id="view-vat">
   <div class="wrap">
-    <div id="vatBox"><div class="loading"><div class="spin"></div>กำลังโหลด...</div></div>
+    <div id="vatBox"></div>
   </div>
 </div>
 
@@ -617,6 +687,39 @@ async function api(path, opts={}){
   return res.json();
 }
 
+/* ---------- เฟส 41: cache-first (SWR) + skeleton + count-up ---------- */
+const SEEN=new Set();
+// paint skeleton เฉพาะครั้งแรกของ view นั้น — ครั้งต่อไปคงเนื้อหาเดิมไว้แล้วอัปเดตเงียบ ๆ
+function firstPaint(view, boxId, skeletonHtml){
+  if(SEEN.has(view)) return;
+  SEEN.add(view);
+  const el=$(boxId); if(el) el.innerHTML=skeletonHtml;
+}
+const seen=v=>SEEN.add(v);
+const skLine=(w,h=13)=>`<div class="sk sk-line" style="width:${w};height:${h}px"></div>`;
+function skRows(n=4){
+  let s='<div class="sk-wrap">';
+  for(let i=0;i<n;i++) s+=`<div class="sk-card"><div class="sk-row"><div class="sk" style="width:44px;height:44px;border-radius:12px;flex:none"></div><div style="flex:1;display:flex;flex-direction:column;gap:8px">${skLine('55%')}${skLine('35%',11)}</div></div></div>`;
+  return s+'</div>';
+}
+function skCards(n=3){
+  let s='<div class="sk-wrap">';
+  for(let i=0;i<n;i++) s+=`<div class="sk-card">${skLine('40%',16)}<div style="height:10px"></div>${skLine('90%')}<div style="height:8px"></div>${skLine('70%')}</div>`;
+  return s+'</div>';
+}
+// นับเลขวิ่งขึ้น (count-up) — ใช้กับยอดบนหน้าวันนี้
+function countUp(el, to, {dur=650, prefix='', neg=false}={}){
+  if(!el) return;
+  const from=0, t0=performance.now();
+  const fmt=n=>{ const v=Math.round(n); return (neg&&to>0?'−':'')+baht(Math.abs(v)); };
+  function step(t){
+    const p=Math.min((t-t0)/dur,1), e=1-Math.pow(1-p,3); // easeOutCubic
+    el.textContent=prefix+fmt(from+(to-from)*e);
+    if(p<1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
 /* ---------- tabs ---------- */
 let costLoaded=false;
 const MAIN_TABS=['today','menu','report','stock'];
@@ -636,7 +739,7 @@ function switchTab(name){
   if(name==='report'){ if(!curMonth){curMonth=thisMonth();} loadReport(); if(!costLoaded){loadCostCompare();costLoaded=true;} }
   if(name==='goals'){ loadGoals(); }
   if(name==='settings'){ loadSettings(); }
-  if(name==='stock'){ loadStock(); }
+  if(name==='stock'){ loadStock(); if(!document.body.classList.contains('staff-mode')) loadShopping(); }
   if(name==='debts'){ loadDebts(); }
   if(name==='recipes'){ loadRecipes(); }
   if(name==='staff'){ loadStaff(); }
@@ -695,13 +798,13 @@ async function saveMenu(){
   }catch(e){toast('ผิดพลาด: '+e.message);}finally{$('saveBtn').disabled=false;}
 }
 window.delMenu=async function(id){if(!confirm('ลบเมนูนี้?'))return;try{await api('/api/menus/'+id,{method:'DELETE'});await loadMenus();toast('ลบแล้ว');}catch(e){toast('ลบไม่สำเร็จ');}};
-async function loadMenus(){menus=await api('/api/menus');renderMenus();}
+async function loadMenus(){firstPaint('menu','list',skRows());menus=await api('/api/menus');renderMenus();}
 
 /* ---------- report tab ---------- */
 async function loadReport(){
   $('mLabel').textContent=monthLabel(curMonth);
   $('nextM').disabled = curMonth>=thisMonth();
-  $('report').innerHTML='<div class="loading"><div class="spin"></div>กำลังโหลด...</div>';
+  firstPaint('report','report',skRows());
   try{
     const [stats,txns]=await Promise.all([
       api('/api/stats?month='+curMonth),
@@ -819,7 +922,7 @@ function goalBlock(label,period,current,goal){
     </div></div>`;
 }
 async function loadGoals(){
-  $('goalsBox').innerHTML='<div class="loading"><div class="spin"></div>กำลังโหลด...</div>';
+  firstPaint('goals','goalsBox',skCards());
   try{
     const d=await api('/api/goals');
     $('goalsBox').innerHTML=goalBlock('ยอดขายวันนี้','daily',d.todayIncome,d.daily||0)
@@ -835,7 +938,7 @@ window.saveGoal=async function(period,del){
 
 /* ---------- stock tab ---------- */
 async function loadStock(){
-  $('stockBox').innerHTML='<div class="loading"><div class="spin"></div>กำลังโหลด...</div>';
+  firstPaint('stock','stockBox',skRows());
   try{
     const d=await api('/api/stock');
     let html='';
@@ -890,9 +993,10 @@ async function stAdd(){
 /* ---------- debts tab ---------- */
 let debtDir='receivable';
 async function loadDebts(){
-  $('debtsBox').innerHTML='<div class="loading"><div class="spin"></div>กำลังโหลด...</div>';
+  firstPaint('debts','debtsBox',skRows());
   try{
     const d=await api('/api/debts');
+    DS.shopName=d.shopName||'';
     const t=d.totals, net=(t.receivable||0)-(t.payable||0), pf=d.month.profit;
     let html=`<div class="panel health">
       <div class="hh">สุขภาพร้าน · ${monthLabel(thisMonth())}</div>
@@ -909,10 +1013,10 @@ async function loadDebts(){
 function debtList(title,dir,rows,color,btn){
   let inner;
   if(!rows||!rows.length){ inner='<div class="dl-empty">ไม่มีรายการค้าง</div>'; }
-  else inner=rows.map(r=>`<div class="drow2">
+  else inner=rows.map(r=>`<div class="drow2" onclick="openDebtSheet('${dir}','${escapeHtml(r.party).replace(/'/g,"\\'")}',${r.remaining})">
     <div class="d-n">${escapeHtml(r.party)}</div>
     <div class="d-a" style="color:${color}">${baht(r.remaining)} ฿</div>
-    <button class="d-b" onclick="dbSettle('${dir}','${escapeHtml(r.party).replace(/'/g,"\\'")}')">${btn}</button>
+    <button class="d-b" onclick="event.stopPropagation();dbSettle('${dir}','${escapeHtml(r.party).replace(/'/g,"\\'")}')">${btn}</button>
   </div>`).join('');
   return `<div class="panel"><h3 style="color:${color}">${title}</h3>${inner}</div>`;
 }
@@ -946,7 +1050,7 @@ function rcRowHtml(ing='',qty='',unit=''){
   </div>`;
 }
 async function loadRecipes(){
-  $('recipesBox').innerHTML='<div class="loading"><div class="spin"></div>กำลังโหลด...</div>';
+  firstPaint('recipes','recipesBox',skRows());
   try{
     const d=await api('/api/recipes');
     rcStock=d.stock||[];
@@ -989,7 +1093,7 @@ async function rcSave(){
 
 /* ---------- staff tab ---------- */
 async function loadStaff(){
-  $('staffBox').innerHTML='<div class="loading"><div class="spin"></div>กำลังโหลด...</div>';
+  firstPaint('staff','staffBox',skRows());
   try{
     const d=await api('/api/staff');
     if(!d.staff.length){$('staffBox').innerHTML='<div class="empty"><p>ยังไม่มีพนักงาน<br><small>เพิ่มชื่อ + ค่าแรงต่อวันด้านบน</small></p></div>';return;}
@@ -1038,7 +1142,7 @@ async function sfAdd(){
 
 /* ---------- vat tab ---------- */
 async function loadVat(){
-  $('vatBox').innerHTML='<div class="loading"><div class="spin"></div>กำลังโหลด...</div>';
+  firstPaint('vat','vatBox',skCards());
   try{
     const d=await api('/api/vat');
     const cfg=d.config, s=d.summary, r=n=>baht(Math.round(n));
@@ -1088,7 +1192,7 @@ async function vatAddPurchase(){
 
 /* ---------- settings tab ---------- */
 async function loadSettings(){
-  $('settingsBox').innerHTML='<div class="loading"><div class="spin"></div>กำลังโหลด...</div>';
+  firstPaint('settings','settingsBox',skCards());
   try{
     const s=await api('/api/settings');
     const isPro=s.tier==='pro';
@@ -1114,7 +1218,7 @@ async function loadSettings(){
       </div>
       <div class="panel"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v6h6"/><path d="M3 13a9 9 0 1 0 3-7.7L3 8"/></svg>รายจ่ายประจำ</h3>
         <div class="sd" style="margin-bottom:12px">ตั้งครั้งเดียว (ค่าเช่า เงินเดือน ค่าน้ำค่าไฟ) ระบบลงรายจ่ายให้อัตโนมัติทุกเดือน</div>
-        <div id="recurBox"><div class="loading"><div class="spin"></div>กำลังโหลด...</div></div>
+        <div id="recurBox"></div>
         <div class="recur-add">
           <input id="rcName" placeholder="ชื่อ เช่น ค่าเช่าร้าน" />
           <div class="recur-add-row">
@@ -1142,6 +1246,7 @@ window.doExport=async function(ym){
 
 /* ---------- recurring expenses ---------- */
 async function loadRecurring(){
+  firstPaint('recurring','recurBox',skRows(2));
   try{
     const items=await api('/api/recurring');
     const box=$('recurBox');
@@ -1209,8 +1314,15 @@ async function loadToday(){
     const d=await api('/api/today'); TODAY=d;
     if(d.shopName) $('greetSub').textContent=d.shopName;
     $('tdDate').textContent=thDate(d.date);
-    $('tdIncome').innerHTML=baht(d.today.income)+'<small> ฿</small>';
-    $('tdProfit').textContent=(d.today.profit<0?'−':'')+baht(Math.abs(d.today.profit));
+    if(!SEEN.has('today-anim')){
+      SEEN.add('today-anim');
+      $('tdIncome').innerHTML='<span id="tdIncNum">0</span><small> ฿</small>';
+      countUp($('tdIncNum'), d.today.income);
+      countUp($('tdProfit'), d.today.profit, {neg:true});
+    } else {
+      $('tdIncome').innerHTML=baht(d.today.income)+'<small> ฿</small>';
+      $('tdProfit').textContent=(d.today.profit<0?'−':'')+baht(Math.abs(d.today.profit));
+    }
     $('tdCount').textContent=d.today.count;
     $('tdCompare').innerHTML=cmpChip('เทียบเมื่อวาน',d.today.income,d.yesterday.income)
       +cmpChip('เทียบวัน'+thDow(d.date)+'ที่แล้ว',d.today.income,d.lastWeekSameDay.income);
@@ -1230,10 +1342,11 @@ async function loadToday(){
       $('tdBest').innerHTML=d.bestSellers.map((b,i)=>`<div class="td-best-row"><span class="medal">${md[i]||''}</span><span class="nm">${escapeHtml(b.name)}</span><span class="qt mono">${b.qty} จาน${b.amount>0?' · '+baht(b.amount)+' ฿':''}</span></div>`).join('');
     } else $('tdBestWrap').classList.add('hide');
   }catch(e){ console.error('[today]',e); }
-  loadRank(); loadDoctor();
+  loadRank(); loadForecast(); loadDoctor();
 }
 async function loadRank(){
   const el=$('rankList');
+  firstPaint('rank','rankList',skRows(3));
   try{
     const d=await api('/api/menu-rank');
     if(!d.items.length){ el.innerHTML='<div class="td-loading">ยังไม่มีข้อมูลขายใน 30 วันนี้ครับ จดขายไปเรื่อย ๆ แล้วอันดับเมนูจะขึ้นตรงนี้เอง</div>'; return; }
@@ -1253,6 +1366,7 @@ async function loadRank(){
 }
 /* หมอร้าน */
 async function loadDoctor(){
+  firstPaint('doctor','docBody',skCards(1));
   try{
     const d=await api('/api/doctor');
     $('docTier').textContent=d.tier==='pro'?'Pro · ตรวจได้ทุกวัน':'Free · ตรวจได้ทุก '+d.freeCooldown+' วัน';
@@ -1325,6 +1439,90 @@ $('tdShareBtn').addEventListener('click',shareToday);
 $('shareClose').addEventListener('click',()=>$('shareBg').classList.add('hide'));
 $('shareBg').addEventListener('click',(e)=>{ if(e.target===$('shareBg')) $('shareBg').classList.add('hide'); });
 $('tdGoChat').addEventListener('click',()=>{ try{ liff.closeWindow(); }catch(e){} });
+
+/* ---------- เฟส 42: สมุดหนี้รายคน + ข้อความทวง ---------- */
+let DS={dir:null,party:null,shopName:''};
+window.openDebtSheet=async function(dir,party,remaining){
+  DS={dir,party,shopName:DS.shopName};
+  $('dsName').textContent=party;
+  $('dsRemain').textContent=baht(remaining)+' ฿';
+  $('dsPayBtn').textContent=dir==='receivable'?'รับชำระ':'บันทึกจ่าย';
+  $('dsDunBtn').classList.toggle('hide',dir!=='receivable');
+  $('dsLogs').innerHTML='<div class="td-loading">กำลังโหลด…</div>';
+  $('debtSheetBg').classList.add('show');$('debtSheet').classList.add('show');
+  try{
+    const d=await api('/api/debts/history?direction='+dir+'&party='+encodeURIComponent(party));
+    if(!d.logs.length){$('dsLogs').innerHTML='<div class="td-loading">ยังไม่มีประวัติ</div>';return;}
+    $('dsLogs').innerHTML=d.logs.map(l=>`<div class="ds-log">
+      <div><div>${l.kind==='add'?(dir==='receivable'?'เพิ่มยอดค้าง':'ยืม/ค้างเพิ่ม'):(dir==='receivable'?'รับชำระ':'จ่ายคืน')}</div><div class="k">${thDate(l.date)}${l.note?' · '+escapeHtml(l.note):''}</div></div>
+      <div class="a ${l.kind}">${l.kind==='add'?'+':'−'}${baht(l.amount)} ฿</div>
+    </div>`).join('');
+  }catch(e){$('dsLogs').innerHTML='<div class="td-loading">โหลดประวัติไม่สำเร็จ</div>';}
+};
+function closeDebtSheet(){$('debtSheetBg').classList.remove('show');$('debtSheet').classList.remove('show');}
+window.closeDebtSheet=closeDebtSheet;
+$('debtSheetBg').addEventListener('click',closeDebtSheet);
+$('dsPayBtn').addEventListener('click',()=>{ closeDebtSheet(); if(DS.party) dbSettle(DS.dir,DS.party.replace(/'/g,"\\'")); });
+$('dsDunBtn').addEventListener('click',async()=>{
+  const shop=DS.shopName?('ร้าน'+DS.shopName):'ทางร้าน';
+  const amt=$('dsRemain').textContent;
+  const msg='สวัสดีครับ 🙏 แจ้งยอดค้างชำระจาก'+shop+'\nคุณ'+DS.party+' มียอดค้างรวม '+amt+'\nสะดวกชำระเมื่อไหร่แจ้งได้เลยนะครับ ขอบคุณครับ 😊';
+  try{ await navigator.clipboard.writeText(msg); toast('คัดลอกแล้ว วางส่งในแชทได้เลย'); }
+  catch(e){
+    const ta=document.createElement('textarea');ta.value=msg;document.body.appendChild(ta);ta.select();
+    try{document.execCommand('copy');toast('คัดลอกแล้ว วางส่งในแชทได้เลย');}catch(_){toast('คัดลอกไม่สำเร็จ');}
+    ta.remove();
+  }
+});
+
+/* ---------- เฟส 43: พยากรณ์สิ้นเดือน ---------- */
+async function loadForecast(){
+  try{
+    const d=await api('/api/forecast');
+    const el=$('fcBody');
+    if(!d.ready){ $('fcCap').textContent=''; el.innerHTML='<div class="td-loading">'+escapeHtml(d.message)+'</div>'; return; }
+    $('fcCap').textContent='เหลืออีก '+d.daysLeft+' วัน';
+    const p=d.projected.profit, pos=p>=0;
+    let h=`<div class="fc-big"><b class="${pos?'pos':'neg'}">${pos?'+':'−'}${baht(Math.abs(p))} ฿</b><span class="cap">กำไรที่คาด ณ สิ้นเดือน</span></div>
+      <div class="fc-line"><span>กำไรตอนนี้</span><b>${d.monthSoFar.profit>=0?'+':'−'}${baht(Math.abs(d.monthSoFar.profit))} ฿</b></div>
+      <div class="fc-line"><span>ขายเฉลี่ย/วัน (28 วันหลัง)</span><b>${baht(d.avgDailyIncome)} ฿</b></div>
+      <div class="fc-line"><span>จ่ายผันแปรเฉลี่ย/วัน</span><b>${baht(d.avgDailyVarExpense)} ฿</b></div>`;
+    if(d.upcomingRecurringSum>0) h+=`<div class="fc-line"><span>รายจ่ายก้อนที่กำลังถึง</span><b>−${baht(d.upcomingRecurringSum)} ฿</b></div>`;
+    if(d.receivable>0) h+=`<div class="fc-line"><span>ลูกค้าติดเรา (ตามเก็บได้)</span><b>+${baht(d.receivable)} ฿</b></div>`;
+    if(d.warnings.length) h+=`<div class="fc-warn">⚠️ อย่าลืมกันเงิน:<br>${d.warnings.map(w=>'• '+escapeHtml(w.text)).join('<br>')}</div>`;
+    if(d.lowConfidence) h+=`<div class="fc-note">ข้อมูลยังน้อย (${d.activeDays} วัน) — จดต่อเนื่องแล้วจะแม่นขึ้นครับ</div>`;
+    el.innerHTML=h;
+  }catch(e){ $('fcBody').innerHTML='<div class="td-loading">โหลดคาดการณ์ไม่สำเร็จ</div>'; }
+}
+
+/* ---------- เฟส 43: รายการต้องซื้อพรุ่งนี้ ---------- */
+const SHOP_DONE=new Set();
+async function loadShopping(){
+  try{
+    const d=await api('/api/shopping-list');
+    const card=$('shopCard');
+    if((!d.items.length&&!d.lowExtra.length)){ card.classList.add('hide'); return; }
+    card.classList.remove('hide');
+    $('shopCap').textContent='สำหรับวัน'+thDow(d.tomorrow);
+    let h=d.items.map((it,i)=>{
+      const id='sh'+i, done=SHOP_DONE.has(it.name);
+      return `<div class="shop-row ${done?'done':''}" onclick="toggleShop('${escapeHtml(it.name).replace(/'/g,"\\'")}',this)">
+        <span class="cb">${done?'✓':''}</span>
+        <span class="si"><span class="n">${escapeHtml(it.name)}</span><br><span class="s">ซื้อ ${it.buy} ${escapeHtml(it.unit)} (มี ${it.have} ต้องใช้ ~${it.need})</span></span>
+        ${it.estCost!=null?`<span class="sc">~${baht(it.estCost)} ฿</span>`:''}
+      </div>`;
+    }).join('');
+    if(d.lowExtra.length) h+=`<div class="fc-note" style="margin-top:8px">ใกล้หมดเพิ่มเติม: ${d.lowExtra.map(s=>escapeHtml(s.name)+' (เหลือ '+s.qty+(s.unit||'')+')').join(', ')}</div>`;
+    if(d.totalEst>0) h+=`<div class="shop-total"><span>รวมโดยประมาณ</span><span class="mono" id="shopTotal">~${baht(d.totalEst)} ฿</span></div>`;
+    if(!d.hasRecipes) h+=`<div class="fc-note">เพิ่มสูตรอาหาร แล้วผมจะคำนวณของที่ต้องซื้อจากยอดขายให้แม่นขึ้นครับ</div>`;
+    $('shopBody').innerHTML=h;
+  }catch(e){ $('shopCard').classList.add('hide'); }
+}
+window.toggleShop=function(name,el){
+  if(SHOP_DONE.has(name)) SHOP_DONE.delete(name); else SHOP_DONE.add(name);
+  el.classList.toggle('done');
+  el.querySelector('.cb').textContent=SHOP_DONE.has(name)?'✓':'';
+};
 
 /* ---------- init ---------- */
 /* เฟส 36: โหมดพนักงาน — ซ่อนเมนูเฉพาะเจ้าของ เหลือ เมนู + สต๊อก */
