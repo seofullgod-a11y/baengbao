@@ -1379,7 +1379,7 @@ async function liffAuth(req, res, next) {
   }
 }
 
-app.use(['/api/menus', '/api/stats', '/api/transactions', '/api/goals', '/api/cost-compare', '/api/settings', '/api/export-link', '/api/recurring', '/api/stock', '/api/debts', '/api/recipes', '/api/staff', '/api/vat', '/api/me', '/api/today', '/api/menu-rank', '/api/doctor', '/api/forecast', '/api/shopping-list'], express.json(), liffAuth);
+app.use(['/api/menus', '/api/stats', '/api/transactions', '/api/goals', '/api/cost-compare', '/api/settings', '/api/export-link', '/api/recurring', '/api/stock', '/api/debts', '/api/recipes', '/api/staff', '/api/vat', '/api/me', '/api/today', '/api/menu-rank', '/api/doctor', '/api/forecast', '/api/shopping-list', '/api/sell'], express.json(), liffAuth);
 
 // เฟส 36: API ที่สงวนให้เจ้าของร้าน — พนักงาน (identityId ≠ userId) เข้าไม่ได้
 app.use(['/api/stats', '/api/goals', '/api/cost-compare', '/api/settings', '/api/export-link', '/api/debts', '/api/staff', '/api/vat', '/api/recipes', '/api/today', '/api/menu-rank', '/api/doctor', '/api/forecast', '/api/shopping-list'], (req, res, next) => {
@@ -1607,6 +1607,82 @@ app.get('/api/shopping-list', async (req, res) => {
   items.sort((a, b) => (b.estCost || 0) - (a.estCost || 0) || b.buy - a.buy);
   const totalEst = items.reduce((s, i) => s + (i.estCost || 0), 0);
   res.json({ tomorrow, weekday: w, items, lowExtra, totalEst, hasRecipes: (recipes || []).length > 0 });
+});
+
+// ===== เฟส 44: โหมดหน้าร้าน (Quick-Sell) + PromptPay =====
+// ข้อมูลสำหรับหน้าขาย: ใช้ได้ทั้งเจ้าของและพนักงาน (พร้อมเพย์เป็นของบัญชีร้าน)
+app.get('/api/sell-info', liffAuth, async (req, res) => {
+  const [prof, promptpayId] = await Promise.all([
+    db.getShopProfile(req.userId), db.getPromptpay(req.userId),
+  ]);
+  res.json({ shopName: prof.shopName || '', promptpayId, isOwner: req.identityId === req.userId });
+});
+
+app.post('/api/sell', async (req, res) => {
+  const b = req.body || {};
+  const items = Array.isArray(b.items) ? b.items
+    .map(it => ({ name: String(it.name || '').trim(), qty: Math.max(1, Math.round(+it.qty || 1)), price: +it.price || 0 }))
+    .filter(it => it.name && it.price >= 0) : [];
+  if (!items.length) return res.status(400).json({ error: 'ไม่มีรายการขาย' });
+  if (items.length > 40) return res.status(400).json({ error: 'รายการเยอะเกินไป' });
+  const total = Math.round(items.reduce((s, it) => s + it.qty * it.price, 0) * 100) / 100;
+  if (!(total > 0)) return res.status(400).json({ error: 'ยอดรวมต้องมากกว่า 0' });
+  const method = b.method === 'promptpay' ? 'promptpay' : 'cash';
+  const today = bkkDate();
+  const isStaff = req.identityId !== req.userId;
+  const note = 'ขายหน้าร้าน (' + (method === 'promptpay' ? 'พร้อมเพย์' : 'เงินสด') + ')'
+    + (isStaff && req.displayName ? ' โดย ' + req.displayName : '');
+
+  const txnId = await db.insertTxn({
+    lineUserId: req.userId, type: 'income', amount: total, category: 'ขายอาหาร',
+    note, items: items.map(it => ({ name: it.name, qty: it.qty, amount: Math.round(it.qty * it.price * 100) / 100 })),
+    source: 'pos', txnDate: today,
+  });
+
+  // ตัดสต๊อกตามสูตร (เหมือนเส้นทางแชท)
+  const stockNotes = []; const lowSet = new Set();
+  for (const it of items) {
+    try {
+      const r = await db.applySaleToStock(req.userId, it.name, it.qty);
+      if (!r) continue;
+      for (const d of r.deducted) {
+        if (d.noStock) continue;
+        if (d.low) lowSet.add(d.ingredient);
+        stockNotes.push(`${d.ingredient} เหลือ ${d.remaining}${d.unit ? ' ' + d.unit : ''}`);
+      }
+    } catch (e) { console.error('[sell-deduct]', e.message); }
+  }
+
+  // ใบเสร็จ (ถ้าขอ)
+  let receiptUrl = null, receiptNo = null;
+  if (b.wantReceipt) {
+    try {
+      const prof = await db.getShopProfile(req.userId);
+      const vatAmount = prof.vatEnabled ? total * prof.vatRate / (100 + prof.vatRate) : 0;
+      const rec = await db.createReceipt(req.userId, {
+        txnId, total, items: items.map(it => ({ name: it.name, qty: it.qty, amount: it.qty * it.price })),
+        vatAmount, note: null, rdate: today,
+      });
+      receiptNo = rec.receipt_no;
+      if (baseUrl()) receiptUrl = `${baseUrl()}/receipt?t=${signReceipt(req.userId, rec.receipt_no)}`;
+    } catch (e) { console.error('[sell-receipt]', e.message); }
+  }
+
+  // เฟส 45: ฉลองยอดแตะเป้าครั้งแรกของวัน (push หาเจ้าของ — เส้นทางแชทมีของตัวเองอยู่แล้ว)
+  try {
+    const goals = await db.getGoals(req.userId);
+    if (goals.daily) {
+      const day = await db.dayTotals(req.userId, today);
+      const before = day.income - total;
+      if (before < goals.daily && day.income >= goals.daily) {
+        const g = flex.goalReachedCard({ period: 'day', current: day.income });
+        linePush(req.userId, [{ type: 'flex', altText: g.altText, contents: g.contents }]).catch(() => {});
+      }
+    }
+  } catch (e) { console.error('[sell-goal]', e.message); }
+
+  res.json({ ok: true, total, count: items.length, receiptUrl, receiptNo,
+    low: [...lowSet], stockNotes: stockNotes.slice(0, 6) });
 });
 
 // ===== เฟส 38: หมอร้าน (AI วิเคราะห์สุขภาพร้าน) =====
@@ -1933,17 +2009,25 @@ app.get('/api/cost-compare', async (req, res) => {
 // ---- ตั้งค่า + export ----
 app.get('/api/settings', async (req, res) => {
   const today = bkkDate();
-  const [dailySummary, mem, used] = await Promise.all([
+  const [dailySummary, mem, used, promptpayId] = await Promise.all([
     db.getDailySummary(req.userId), db.getMembership(req.userId, today), db.usageToday(req.userId, today),
+    db.getPromptpay(req.userId),
   ]);
   res.json({
-    dailySummary,
+    dailySummary, promptpayId,
     tier: mem.effective, tierUntil: mem.until,
     aiUsed: used, aiLimit: aiLimitFor(mem.effective),
   });
 });
 app.post('/api/settings', async (req, res) => {
-  if (typeof (req.body || {}).dailySummary === 'boolean') await db.setDailySummary(req.userId, req.body.dailySummary);
+  const b = req.body || {};
+  if (typeof b.dailySummary === 'boolean') await db.setDailySummary(req.userId, b.dailySummary);
+  if (b.promptpayId !== undefined) {
+    const pp = String(b.promptpayId || '').replace(/[^0-9]/g, '');
+    if (pp && ![10, 13, 15].includes(pp.length))
+      return res.status(400).json({ error: 'พร้อมเพย์ต้องเป็นเบอร์มือถือ 10 หลัก / บัตรประชาชน 13 หลัก / e-Wallet 15 หลัก' });
+    await db.setPromptpay(req.userId, pp);
+  }
   res.json({ ok: true });
 });
 app.get('/api/export-link', async (req, res) => {

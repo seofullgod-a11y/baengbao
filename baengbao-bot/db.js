@@ -71,6 +71,7 @@ async function init() {
   await pool.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS vat SMALLINT NOT NULL DEFAULT 0;`);
   // เฟส 35: ข้อมูลร้าน (สำหรับใบเสร็จ) + ตารางใบเสร็จ
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS shop_name TEXT;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS promptpay_id TEXT;`); // เฟส 44
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS shop_address TEXT;`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS tax_id TEXT;`);
   await pool.query(`
@@ -1087,8 +1088,18 @@ async function recurringDue(lineUserId, afterDay, ym) {
   return rows.map(r => ({ name: r.name, amount: +r.amount, day: r.day_of_month }));
 }
 
+// เฟส 44: พร้อมเพย์ของร้าน (เก็บที่บัญชีเจ้าของ)
+async function getPromptpay(lineUserId) {
+  const { rows } = await pool.query(`SELECT promptpay_id FROM users WHERE line_user_id=$1`, [lineUserId]);
+  return (rows[0] && rows[0].promptpay_id) || '';
+}
+async function setPromptpay(lineUserId, id) {
+  await pool.query(`UPDATE users SET promptpay_id=$2 WHERE line_user_id=$1`, [lineUserId, id || null]);
+}
+
 module.exports = {
   pool, init, upsertUser, insertTxn, dayTotals, monthTotals, rangeTotals,
+  getPromptpay, setPromptpay,
   txnsBetween, getInsight, saveInsight,
   logDebt, debtHistory, forecastBase, recurringDue,
   listMenus, createMenu, updateMenu, deleteMenu,
