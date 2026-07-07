@@ -18,26 +18,29 @@
     --r-md:16px; --r-lg:22px; --shadow:0 10px 26px -14px rgba(16,51,122,.28);
   }
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-  body{font-family:"IBM Plex Sans Thai",system-ui,sans-serif;background:var(--bg);color:var(--ink);line-height:1.55;padding-bottom:90px}
+  body{font-family:"IBM Plex Sans Thai",system-ui,sans-serif;background:linear-gradient(180deg,#e9f1ff 0%,var(--bg) 260px);color:var(--ink);line-height:1.55;padding-bottom:calc(118px + env(safe-area-inset-bottom));min-height:100vh}
   h1,h2,h3,.display{font-family:"Kanit",sans-serif;letter-spacing:-.01em}
   .mono{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
   .wrap{max-width:560px;margin:0 auto;padding:0 16px}
 
-  header{background:linear-gradient(150deg,var(--blue),var(--blue-deep));color:#fff;padding:20px 0 16px;box-shadow:var(--shadow)}
+  /* เฟส 40: header แบบแอป — ทักทาย + อวตาร + ปุ่มเมนู */
+  header{background:transparent;color:var(--ink);padding:18px 0 6px;box-shadow:none}
   header .wrap{display:flex;align-items:center;gap:11px}
-  header .logo{width:38px;height:38px;border-radius:11px;background:transparent;display:grid;place-items:center;flex:none;overflow:hidden}
+  header .logo{width:46px;height:46px;border-radius:50%;background:#fff;display:grid;place-items:center;flex:none;overflow:hidden;border:2px solid #fff;box-shadow:0 6px 16px -8px rgba(16,51,122,.35)}
   header .logo svg{width:22px;height:22px}
   header .logo img{width:100%;height:100%;object-fit:cover;display:block}
-  header .hb{flex:none;width:40px;height:40px;border:none;background:rgba(255,255,255,.16);color:#fff;border-radius:10px;display:grid;place-items:center;cursor:pointer;margin-right:4px}
-  header .hb svg{width:22px;height:22px}
-  header h1{font-size:18px;font-weight:700;line-height:1.2}
-  header p{font-size:12px;opacity:.85;margin-top:1px}
+  header .ht{flex:1;min-width:0}
+  header .hb{flex:none;width:42px;height:42px;border:1px solid var(--border);background:var(--card);color:var(--ink-soft);border-radius:14px;display:grid;place-items:center;cursor:pointer;box-shadow:0 6px 14px -10px rgba(16,51,122,.3)}
+  header .hb svg{width:21px;height:21px}
+  header h1{font-size:17.5px;font-weight:700;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  header p{font-size:12px;color:var(--ink-soft);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
-  .tabs{position:sticky;top:0;z-index:30;background:linear-gradient(150deg,var(--blue),var(--blue-deep))}
-  .tabs .wrap{display:flex;gap:2px}
-  .tab{flex:1;text-align:center;padding:9px 0;color:rgba(255,255,255,.72);font-family:"Kanit";font-weight:600;font-size:11px;border-bottom:3px solid transparent;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;line-height:1}
-  .tab svg{width:19px;height:19px}
-  .tab.active{color:#fff;border-bottom-color:#fff}
+  /* เฟส 40: bottom navigation แบบแอปจริง (แคปซูลลอย) */
+  .tabs{position:fixed;left:0;right:0;bottom:0;top:auto;z-index:30;background:transparent;padding:0 14px calc(12px + env(safe-area-inset-bottom));pointer-events:none}
+  .tabs .wrap{display:flex;gap:4px;background:rgba(255,255,255,.94);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid var(--border);border-radius:26px;padding:8px;box-shadow:0 18px 40px -16px rgba(16,51,122,.4);pointer-events:auto}
+  .tab{flex:1;text-align:center;padding:9px 0 7px;color:var(--ink-faint);font-family:"Kanit";font-weight:600;font-size:10.5px;border-bottom:none;border-radius:18px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;line-height:1}
+  .tab svg{width:20px;height:20px}
+  .tab.active{color:#fff;background:linear-gradient(150deg,var(--blue),var(--blue-deep));border-bottom-color:transparent;box-shadow:0 10px 18px -10px rgba(31,107,255,.75)}
   .hide{display:none!important}
   .drawer-bg{position:fixed;inset:0;background:rgba(10,31,68,.45);z-index:60}
   .drawer{position:fixed;top:0;left:0;bottom:0;width:82%;max-width:320px;background:#fff;z-index:70;box-shadow:4px 0 24px rgba(0,0,0,.2);display:flex;flex-direction:column;animation:slideIn .2s ease}
@@ -96,7 +99,7 @@
   .empty svg{width:54px;height:54px;color:var(--sky);margin-bottom:14px}
   .empty p{font-size:15px}
 
-  .fab{position:fixed;left:50%;transform:translateX(-50%);bottom:20px;z-index:20;background:var(--blue);color:#fff;border:none;border-radius:100px;padding:15px 26px;font-family:"Kanit";font-weight:600;font-size:16px;box-shadow:0 12px 26px -8px rgba(31,107,255,.6);display:flex;align-items:center;gap:8px;cursor:pointer}
+  .fab{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(96px + env(safe-area-inset-bottom));z-index:20;background:var(--blue);color:#fff;border:none;border-radius:100px;padding:15px 26px;font-family:"Kanit";font-weight:600;font-size:16px;box-shadow:0 12px 26px -8px rgba(31,107,255,.6);display:flex;align-items:center;gap:8px;cursor:pointer}
   .fab svg{width:20px;height:20px}
   .fab.hide{display:none}
 
@@ -154,7 +157,7 @@
   .loading{text-align:center;padding:50px 20px;color:var(--ink-faint)}
   .spin{width:30px;height:30px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;margin:0 auto 14px;animation:sp 1s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
-  .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:11px 18px;border-radius:100px;font-size:14px;z-index:60;opacity:0;transition:.25s;pointer-events:none}
+  .toast{position:fixed;bottom:calc(160px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:11px 18px;border-radius:100px;font-size:14px;z-index:60;opacity:0;transition:.25s;pointer-events:none}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   /* ---- goals / settings / cost ---- */
   .goalcard{background:var(--card);border:1px solid var(--border);border-radius:var(--r-md);padding:18px;margin-bottom:14px}
@@ -363,7 +366,8 @@
 <header>
   <div class="wrap">
     <span class="logo"><img src="logo.png" alt="แบ่งเบา" /></span>
-    <div><h1>แบ่งเบา</h1><p>ผู้ช่วยบัญชีร้านอาหาร</p></div>
+    <div class="ht"><h1 id="greet">สวัสดีครับ 👋</h1><p id="greetSub">ผู้ช่วยบัญชีร้านอาหาร</p></div>
+    <button class="hb" id="menuBtn" aria-label="เมนูเพิ่มเติม"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg></button>
   </div>
 </header>
 <div class="tabs">
@@ -642,6 +646,7 @@ function switchTab(name){
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
   if(t.dataset.action==='more') openMenu(); else switchTab(t.dataset.view);
 }));
+$('menuBtn').addEventListener('click',openMenu);
 $('drawerBg').addEventListener('click',closeMenu);
 $('drawerClose').addEventListener('click',closeMenu);
 document.querySelectorAll('.nav-item').forEach(el=>el.addEventListener('click',()=>switchTab(el.dataset.view)));
@@ -1202,6 +1207,7 @@ function cmpChip(label,cur,prev){
 async function loadToday(){
   try{
     const d=await api('/api/today'); TODAY=d;
+    if(d.shopName) $('greetSub').textContent=d.shopName;
     $('tdDate').textContent=thDate(d.date);
     $('tdIncome').innerHTML=baht(d.today.income)+'<small> ฿</small>';
     $('tdProfit').textContent=(d.today.profit<0?'−':'')+baht(Math.abs(d.today.profit));
@@ -1340,7 +1346,7 @@ function applyStaffMode(){
     if(!liff.isLoggedIn()){liff.login();return;}
     TOKEN=liff.getAccessToken();
     let isStaffUser=false;
-    try{ const me=await api('/api/me'); if(me && me.role==='staff'){ isStaffUser=true; applyStaffMode(); } }catch(e){}
+    try{ const me=await api('/api/me'); if(me&&me.name){ $('greet').textContent='สวัสดีครับ คุณ'+me.name+' 👋'; } if(me && me.role==='staff'){ isStaffUser=true; applyStaffMode(); } }catch(e){}
     await loadMenus();
     const params=new URLSearchParams(location.search);
     if(params.get('tab')==='report'){switchTab('report');}
