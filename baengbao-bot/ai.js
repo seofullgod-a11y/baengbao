@@ -87,7 +87,26 @@ async function parseImage(base64, mediaType) {
   return safeJSON(text);
 }
 
-module.exports = { parseText, parseImage, transcribeThai };
+// เฟส 38: หมอร้าน — วิเคราะห์สุขภาพร้านจากข้อมูลจริง พูดภาษาคน
+const DOCTOR_MODEL = process.env.DOCTOR_MODEL || TEXT_MODEL;
+async function analyzeShop(data) {
+  const res = await anthropic.messages.create({
+    model: DOCTOR_MODEL,
+    max_tokens: 700,
+    system: `คุณคือ "หมอร้าน" ที่ปรึกษาร้านอาหารใจดี พูดกับเจ้าของร้าน (พ่อค้าแม่ค้าไทย อาจเป็นผู้สูงอายุ) ด้วยภาษาง่าย สุภาพ ลงท้ายครับ
+กฎการตอบ:
+- ตอบเป็นข้อความธรรมดา ห้ามใช้ markdown (#, **, ตาราง) ใช้ • นำหน้าแต่ละข้อได้
+- วิเคราะห์จากตัวเลขจริงที่ให้เท่านั้น ห้ามเดาตัวเลขที่ไม่มี
+- โครงสร้าง: เปิด 1 ประโยคสรุปภาพรวม แล้วตามด้วย • สิ่งที่ดี 1-2 ข้อ • สิ่งที่ควรระวัง 1-2 ข้อ • คำแนะนำที่ทำได้จริง 1-2 ข้อ
+- อ้างตัวเลขประกอบเสมอ เช่น "ยอดขายสัปดาห์นี้ 12,400 บาท เพิ่มจากสัปดาห์ก่อน 8%"
+- ถ้าข้อมูลน้อย (เพิ่งเริ่มจด) ให้กำลังใจและแนะนำว่าจดต่อเนื่องแล้วจะวิเคราะห์ได้ลึกขึ้น
+- ความยาวรวมไม่เกิน ~10 บรรทัด`,
+    messages: [{ role: 'user', content: 'ข้อมูลร้านของผม (JSON):\n' + JSON.stringify(data) + '\n\nช่วยตรวจสุขภาพร้านให้หน่อยครับ' }],
+  });
+  return res.content.map(b => b.text || '').join('').trim();
+}
+
+module.exports = { parseText, parseImage, transcribeThai, analyzeShop };
 
 // ถอดเสียงพูดเป็นข้อความภาษาไทย (ใช้ OpenAI Whisper — รองรับไทยดี)
 async function transcribeThai(buffer, mimeType = 'audio/m4a') {

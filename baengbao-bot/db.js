@@ -178,6 +178,16 @@ async function init() {
       created_at   TIMESTAMPTZ DEFAULT now()
     );
   `);
+  // เฟส 38: หมอร้าน — เก็บผลวิเคราะห์ AI ล่าสุดต่อบัญชีร้าน
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ai_insights (
+      id SERIAL PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      created_date DATE NOT NULL,
+      content TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT now()
+    );
+  `);
   console.log('[db] schema ready');
 }
 
@@ -981,8 +991,44 @@ async function bumpUsage(lineUserId, dateStr) {
   return rows[0].ai_calls;
 }
 
+// เฟส 37: ดึงรายการในช่วงวัน (เอา items ไปนับเมนูขายดี/จัดอันดับใน JS — เลี่ยง jsonb function ให้เข้ากับทุก Postgres)
+async function txnsBetween(lineUserId, start, end) {
+  const { rows } = await pool.query(
+    `SELECT type, amount, category, items, txn_date::text AS d
+     FROM transactions WHERE line_user_id=$1 AND txn_date BETWEEN $2 AND $3
+     ORDER BY txn_date ASC`,
+    [lineUserId, start, end]
+  );
+  return rows.map(r => ({
+    type: r.type, amount: +r.amount, category: r.category,
+    items: Array.isArray(r.items) ? r.items : (r.items ? r.items : []), date: r.d,
+  }));
+}
+
+// เฟส 38: ผลวิเคราะห์หมอร้านล่าสุด
+async function getInsight(accountId) {
+  const { rows } = await pool.query(
+    `SELECT created_date::text AS d, content FROM ai_insights WHERE account_id=$1 ORDER BY id DESC LIMIT 1`,
+    [accountId]
+  );
+  return rows[0] ? { date: rows[0].d, content: rows[0].content } : null;
+}
+async function saveInsight(accountId, dateStr, content) {
+  await pool.query(
+    `INSERT INTO ai_insights (account_id, created_date, content) VALUES ($1,$2,$3)`,
+    [accountId, dateStr, content]
+  );
+  // เก็บเฉพาะ 10 รายการล่าสุดต่อร้าน กันตารางบวม
+  await pool.query(
+    `DELETE FROM ai_insights WHERE account_id=$1 AND id NOT IN
+     (SELECT id FROM ai_insights WHERE account_id=$1 ORDER BY id DESC LIMIT 10)`,
+    [accountId]
+  );
+}
+
 module.exports = {
   pool, init, upsertUser, insertTxn, dayTotals, monthTotals, rangeTotals,
+  txnsBetween, getInsight, saveInsight,
   listMenus, createMenu, updateMenu, deleteMenu,
   dailySeries, categoryBreakdown, recentTxns, deleteTxn, updateTxn, currentStreak,
   bumpUsage, setDailySummary, activeUsersForDaily, usersToRemind, getState, setState,

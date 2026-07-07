@@ -1376,10 +1376,10 @@ async function liffAuth(req, res, next) {
   }
 }
 
-app.use(['/api/menus', '/api/stats', '/api/transactions', '/api/goals', '/api/cost-compare', '/api/settings', '/api/export-link', '/api/recurring', '/api/stock', '/api/debts', '/api/recipes', '/api/staff', '/api/vat', '/api/me'], express.json(), liffAuth);
+app.use(['/api/menus', '/api/stats', '/api/transactions', '/api/goals', '/api/cost-compare', '/api/settings', '/api/export-link', '/api/recurring', '/api/stock', '/api/debts', '/api/recipes', '/api/staff', '/api/vat', '/api/me', '/api/today', '/api/menu-rank', '/api/doctor'], express.json(), liffAuth);
 
 // เฟส 36: API ที่สงวนให้เจ้าของร้าน — พนักงาน (identityId ≠ userId) เข้าไม่ได้
-app.use(['/api/stats', '/api/goals', '/api/cost-compare', '/api/settings', '/api/export-link', '/api/debts', '/api/staff', '/api/vat', '/api/recipes'], (req, res, next) => {
+app.use(['/api/stats', '/api/goals', '/api/cost-compare', '/api/settings', '/api/export-link', '/api/debts', '/api/staff', '/api/vat', '/api/recipes', '/api/today', '/api/menu-rank', '/api/doctor'], (req, res, next) => {
   if (req.identityId && req.userId && req.identityId !== req.userId) {
     return res.status(403).json({ error: 'staff_forbidden', role: 'staff' });
   }
@@ -1389,6 +1389,170 @@ app.use(['/api/stats', '/api/goals', '/api/cost-compare', '/api/settings', '/api
 // ใครกำลังใช้งาน (เจ้าของ/พนักงาน) — ให้ mini app ปรับเมนูตามสิทธิ์
 app.get('/api/me', (req, res) => {
   res.json({ role: req.identityId === req.userId ? 'owner' : 'staff', name: req.displayName || '' });
+});
+
+// ===== เฟส 37: หน้า "วันนี้" (Today Pulse) + จัดอันดับเมนู =====
+function minusDays(dateStr, n) {
+  const dt = new Date(dateStr + 'T00:00:00Z');
+  dt.setUTCDate(dt.getUTCDate() - n);
+  return dt.toISOString().slice(0, 10);
+}
+// รวมยอดขายรายเมนูจาก items ของรายการ income (นับใน JS — items เป็น JSONB [{name,qty,amount}])
+function aggregateSoldItems(txns) {
+  const map = new Map();
+  for (const t of txns) {
+    if (t.type !== 'income' || !Array.isArray(t.items)) continue;
+    for (const it of t.items) {
+      const name = String(it && it.name || '').trim();
+      if (!name) continue;
+      const key = name.toLowerCase();
+      const cur = map.get(key) || { name, qty: 0, amount: 0 };
+      cur.qty += Number(it.qty) || 1;
+      cur.amount += Number(it.amount) || 0;
+      map.set(key, cur);
+    }
+  }
+  return [...map.values()].sort((a, b) => b.qty - a.qty || b.amount - a.amount);
+}
+
+app.get('/api/today', async (req, res) => {
+  await db.upsertUser(req.identityId, req.displayName);
+  const today = bkkDate();
+  const yesterday = minusDays(today, 1);
+  const lastWeekSameDay = minusDays(today, 7);
+  const [day, yday, lastWeek, goals, streak, month, todayTxns, shop] = await Promise.all([
+    db.dayTotals(req.userId, today),
+    db.dayTotals(req.userId, yesterday),
+    db.dayTotals(req.userId, lastWeekSameDay),
+    db.getGoals(req.userId),
+    db.currentStreak(req.userId, today),
+    db.monthTotals(req.userId, today.slice(0, 7)),
+    db.txnsBetween(req.userId, today, today),
+    db.getShopProfile(req.userId).catch(() => null),
+  ]);
+  res.json({
+    date: today,
+    today: day, yesterday: yday, lastWeekSameDay: lastWeek,
+    goalDaily: goals.daily || null, streak, month,
+    bestSellers: aggregateSoldItems(todayTxns).slice(0, 3),
+    shopName: (shop && shop.shopName) || '',
+    contact: process.env.ADMIN_CONTACT || '@952dxvdb',
+  });
+});
+
+app.get('/api/menu-rank', async (req, res) => {
+  const today = bkkDate();
+  const days = 30;
+  const start = minusDays(today, days - 1);
+  const [txns, menus, recipes] = await Promise.all([
+    db.txnsBetween(req.userId, start, today),
+    db.listMenus(req.userId),
+    db.listRecipes(req.userId).catch(() => []),
+  ]);
+  const sold = aggregateSoldItems(txns);
+  const menuByName = new Map(menus.map(m => [m.name.trim().toLowerCase(), m]));
+  // ต้นทุนจริงจากสูตร (เฟส 31) ถ้ามี — ใช้แทน material_cost ของเมนู
+  const recipeCostByName = new Map();
+  for (const r of (recipes || [])) {
+    try {
+      if (!r.items || !r.items.length) continue;
+      const c = await db.recipeCost(req.userId, r.items);
+      if (c && c.complete) recipeCostByName.set(String(r.menuName || '').trim().toLowerCase(), c.cost);
+    } catch (e) { /* ข้ามสูตรที่คำนวณไม่ได้ */ }
+  }
+  const items = sold.map(s => {
+    const key = s.name.trim().toLowerCase();
+    // จับคู่ชื่อ: ตรงกันก่อน ไม่งั้นลองแบบชื่อเมนูเป็นส่วนหนึ่งของชื่อที่จด
+    let m = menuByName.get(key);
+    if (!m) { for (const [k, v] of menuByName) { if (key.includes(k) || k.includes(key)) { m = v; break; } } }
+    const price = m ? m.price : (s.qty > 0 && s.amount > 0 ? s.amount / s.qty : 0);
+    const rc = m ? recipeCostByName.get(m.name.trim().toLowerCase()) : undefined;
+    const costPerDish = rc !== undefined ? rc + (m ? m.labor_cost : 0)
+      : (m ? m.material_cost + m.labor_cost : null);
+    const revenue = s.amount > 0 ? s.amount : price * s.qty;
+    const profitPerDish = (costPerDish !== null && price > 0) ? price - costPerDish : null;
+    const totalProfit = profitPerDish !== null ? profitPerDish * s.qty : null;
+    return {
+      name: m ? m.name : s.name, sold: s.qty, revenue: Math.round(revenue * 100) / 100,
+      price: price || null, costPerDish, profitPerDish, totalProfit,
+      hasCost: profitPerDish !== null, fromRecipe: rc !== undefined,
+    };
+  });
+  // เรียง: เมนูที่รู้กำไรจริงมาก่อน (กำไรรวมมาก→น้อย) แล้วตามด้วยเมนูไม่รู้ต้นทุน (ยอดขายมาก→น้อย)
+  items.sort((a, b) => {
+    if (a.hasCost !== b.hasCost) return a.hasCost ? -1 : 1;
+    return a.hasCost ? b.totalProfit - a.totalProfit : b.revenue - a.revenue;
+  });
+  res.json({ days, start, end: today, items });
+});
+
+// ===== เฟส 38: หมอร้าน (AI วิเคราะห์สุขภาพร้าน) =====
+const DOCTOR_FREE_COOLDOWN = 30; // Free ตรวจได้ทุก 30 วัน
+function doctorAvailability(mem, last, today) {
+  if (!last) return { canGenerate: true, nextDate: today };
+  if (mem.effective === 'pro') {
+    const next = minusDays(last.date, -1); // last.date + 1 วัน
+    return { canGenerate: last.date < today, nextDate: next };
+  }
+  const next = minusDays(last.date, -DOCTOR_FREE_COOLDOWN);
+  return { canGenerate: next <= today, nextDate: next };
+}
+app.get('/api/doctor', async (req, res) => {
+  const today = bkkDate();
+  const [mem, last] = await Promise.all([
+    db.getMembership(req.userId, today), db.getInsight(req.userId),
+  ]);
+  const avail = doctorAvailability(mem, last, today);
+  res.json({ tier: mem.effective, insight: last, ...avail, freeCooldown: DOCTOR_FREE_COOLDOWN });
+});
+app.post('/api/doctor', async (req, res) => {
+  const today = bkkDate();
+  const [mem, last] = await Promise.all([
+    db.getMembership(req.userId, today), db.getInsight(req.userId),
+  ]);
+  const avail = doctorAvailability(mem, last, today);
+  if (!avail.canGenerate) {
+    return res.status(429).json({
+      error: mem.effective === 'pro'
+        ? 'วันนี้ตรวจไปแล้วครับ พรุ่งนี้ตรวจใหม่ได้เลย'
+        : `แพ็กฟรีตรวจได้ทุก ${DOCTOR_FREE_COOLDOWN} วันครับ ตรวจครั้งถัดไปได้วันที่ ${avail.nextDate} (Pro ตรวจได้ทุกวัน)`,
+      nextDate: avail.nextDate,
+    });
+  }
+  try {
+    // เตรียมข้อมูลให้หมอ: 7 วันล่าสุด vs 7 วันก่อนหน้า + เมนูขายดี 14 วัน + หมวดรายจ่ายเดือนนี้ + สต๊อกใกล้หมด + หนี้ + เป้า
+    const wk1Start = minusDays(today, 6);
+    const wk2Start = minusDays(today, 13);
+    const wk2End = minusDays(today, 7);
+    const ym = today.slice(0, 7);
+    const [thisWeek, prevWeek, txns14, cats, low, debts, goals, month] = await Promise.all([
+      db.rangeTotals(req.userId, wk1Start, today),
+      db.rangeTotals(req.userId, wk2Start, wk2End),
+      db.txnsBetween(req.userId, minusDays(today, 13), today),
+      db.categoryBreakdown(req.userId, ym, 'expense'),
+      db.lowStock(req.userId).catch(() => []),
+      db.debtTotals(req.userId).catch(() => null),
+      db.getGoals(req.userId),
+      db.monthTotals(req.userId, ym),
+    ]);
+    const data = {
+      วันนี้: today,
+      สัปดาห์นี้_7วัน: thisWeek, สัปดาห์ก่อน_7วัน: prevWeek,
+      เดือนนี้: month,
+      เมนูขายดี_14วัน: aggregateSoldItems(txns14).slice(0, 5),
+      รายจ่ายตามหมวด_เดือนนี้: (cats || []).slice(0, 6),
+      ของใกล้หมด: (low || []).map(s => `${s.name} เหลือ ${s.qty}${s.unit || ''}`),
+      หนี้คงค้าง: debts,
+      เป้ายอดขาย: { รายวัน: goals.daily || null, รายเดือน: goals.monthly || null },
+    };
+    const content = await ai.analyzeShop(data);
+    if (!content) throw new Error('ไม่ได้ผลวิเคราะห์');
+    await db.saveInsight(req.userId, today, content);
+    res.json({ ok: true, insight: { date: today, content } });
+  } catch (e) {
+    console.error('[doctor]', e.message);
+    res.status(500).json({ error: 'หมอร้านไม่ว่างชั่วคราว ลองใหม่อีกครั้งนะครับ' });
+  }
 });
 
 app.get('/api/menus', async (req, res) => {
